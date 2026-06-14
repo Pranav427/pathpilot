@@ -2,6 +2,7 @@
 
 import json
 import hashlib
+import hmac
 import logging
 import os
 from datetime import datetime, timezone
@@ -40,6 +41,7 @@ from tracker import (
     list_job_search_runs,
     list_ranked_jobs_for_run,
     record_job_search_run,
+    record_feedback,
     update_application_status,
 )
 from utils import clean_filename
@@ -53,6 +55,72 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
+
+
+def config_value(name: str, default: str = "") -> str:
+    """Reads deployment configuration from environment or Streamlit secrets."""
+    environment_value = os.getenv(name)
+    if environment_value is not None:
+        return environment_value
+    try:
+        return str(st.secrets.get(name, default))
+    except Exception:
+        return default
+
+
+def alpha_mode_enabled() -> bool:
+    """Returns whether the private-alpha safeguards should be displayed."""
+    return config_value("APPLYSMART_ALPHA_MODE", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def max_ai_actions() -> int:
+    """Returns the per-session AI action allowance."""
+    try:
+        return max(1, int(config_value("MAX_AI_ACTIONS_PER_SESSION", "20")))
+    except ValueError:
+        return 20
+
+
+def consume_ai_budget(units: int = 1) -> bool:
+    """Reserves AI usage units for the current browser session."""
+    units = max(1, int(units))
+    used = int(st.session_state.get("ai_actions_used", 0))
+    if used + units > max_ai_actions():
+        return False
+    st.session_state.ai_actions_used = used + units
+    return True
+
+
+def require_private_access() -> bool:
+    """Shows a shared-password gate when APP_PASSWORD is configured."""
+    expected_password = config_value("APP_PASSWORD").strip()
+    if not expected_password:
+        return True
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.title("ApplySmart AI")
+    st.caption("Private alpha access")
+    password = st.text_input(
+        "Shared testing password",
+        type="password",
+        key="alpha_password",
+    )
+    if st.button("Enter private alpha", type="primary"):
+        if hmac.compare_digest(password, expected_password):
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password. Ask the project owner for access.")
+    st.info(
+        "This private testing build is available only to invited testers."
+    )
+    return False
 
 
 def user_facing_error(exc: Exception, action: str) -> str:
@@ -493,6 +561,8 @@ def init_state():
         "ranking_run_id": None,
         "shortlist": [],
         "history_load_error": "",
+        "authenticated": False,
+        "ai_actions_used": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -914,23 +984,29 @@ def render_workspace():
         )
 
     if analyze_clicked:
-        try:
-            with st.spinner("Analyzing the role and calculating fit..."):
-                analysis, profile, match = prepare_match(job_description)
-            st.session_state.job_analysis = analysis
-            st.session_state.base_profile = profile
-            st.session_state.base_match = match
-            st.session_state.company_name = company
-            st.session_state.job_title = role
-            st.session_state.job_description = job_description
-            st.session_state.source_url = source_url
-            st.session_state.analyzed_description_fingerprint = (
-                description_fingerprint(job_description)
+        if not consume_ai_budget():
+            st.error(
+                "This testing session has reached its AI usage limit. "
+                "Start a new session or contact the project owner."
             )
-            st.session_state.draft = None
-            st.session_state.saved = None
-        except Exception as exc:
-            show_action_error(exc, "Job analysis")
+        else:
+            try:
+                with st.spinner("Analyzing the role and calculating fit..."):
+                    analysis, profile, match = prepare_match(job_description)
+                st.session_state.job_analysis = analysis
+                st.session_state.base_profile = profile
+                st.session_state.base_match = match
+                st.session_state.company_name = company
+                st.session_state.job_title = role
+                st.session_state.job_description = job_description
+                st.session_state.source_url = source_url
+                st.session_state.analyzed_description_fingerprint = (
+                    description_fingerprint(job_description)
+                )
+                st.session_state.draft = None
+                st.session_state.saved = None
+            except Exception as exc:
+                show_action_error(exc, "Job analysis")
 
     if not st.session_state.base_match:
         st.markdown(
@@ -1008,23 +1084,29 @@ def render_workspace():
         use_container_width=True,
         disabled=bool(identity_error),
     ):
-        try:
-            with st.spinner("Generating grounded application materials..."):
-                draft = generate_application_draft(
-                    company_name=company,
-                    job_title=role,
-                    job_description=job_description,
-                    tone=tone,
-                    source_url=source_url,
-                    confirmed_terms=confirmed,
-                    job_analysis=st.session_state.job_analysis,
-                    profile=st.session_state.base_profile,
-                    match=st.session_state.base_match,
-                )
-            st.session_state.draft = draft
-            st.session_state.saved = None
-        except Exception as exc:
-            show_action_error(exc, "Application generation")
+        if not consume_ai_budget(units=2):
+            st.error(
+                "This testing session does not have enough AI usage remaining "
+                "to generate both documents."
+            )
+        else:
+            try:
+                with st.spinner("Generating grounded application materials..."):
+                    draft = generate_application_draft(
+                        company_name=company,
+                        job_title=role,
+                        job_description=job_description,
+                        tone=tone,
+                        source_url=source_url,
+                        confirmed_terms=confirmed,
+                        job_analysis=st.session_state.job_analysis,
+                        profile=st.session_state.base_profile,
+                        match=st.session_state.base_match,
+                    )
+                st.session_state.draft = draft
+                st.session_state.saved = None
+            except Exception as exc:
+                show_action_error(exc, "Application generation")
 
     if st.session_state.draft:
         render_draft(st.session_state.draft)
@@ -1097,6 +1179,11 @@ def render_job_ranking():
             st.error(
                 "No individual job-detail URLs were found. Open a specific job "
                 "from one of these search pages, then paste that job's URL."
+            )
+        elif not consume_ai_budget(units=len(candidate_urls)):
+            st.error(
+                "This ranking run exceeds the remaining AI allowance for the "
+                "current testing session. Use fewer URLs or start a new session."
             )
         else:
             progress = st.progress(0, text="Preparing job analysis...")
@@ -1714,26 +1801,100 @@ def render_ranking_history():
                     )
 
 
+def render_feedback():
+    """Collects structured comments from invited alpha testers."""
+    render_page_header(
+        "Alpha Feedback",
+        "Share what worked, what failed, and what felt confusing.",
+    )
+    st.markdown(
+        '<div class="notice">Please avoid entering passwords, API keys, or '
+        "sensitive personal information. Feedback is stored in the private "
+        "testing database.</div>",
+        unsafe_allow_html=True,
+    )
+    tester_name = st.text_input(
+        "Your name (optional)",
+        placeholder="Example: Rahul",
+    )
+    category = st.selectbox(
+        "Feedback category",
+        [
+            "Bug or crash",
+            "UI or usability",
+            "Resume quality",
+            "Cover letter quality",
+            "Fit score or matching",
+            "Job URL extraction",
+            "Feature request",
+            "General feedback",
+        ],
+    )
+    rating = st.slider(
+        "Overall experience",
+        min_value=1,
+        max_value=5,
+        value=3,
+    )
+    details = st.text_area(
+        "What happened?",
+        height=180,
+        placeholder=(
+            "Describe the steps you followed, what you expected, and what "
+            "actually happened."
+        ),
+    )
+    if st.button("Submit feedback", type="primary"):
+        try:
+            feedback_id = record_feedback(
+                tester_name=tester_name,
+                category=category,
+                rating=rating,
+                details=details,
+            )
+            st.success(f"Feedback submitted. Reference #{feedback_id}.")
+        except ValueError as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            show_action_error(exc, "Feedback submission")
+
+
 def main():
     apply_styles()
     init_state()
+    if not require_private_access():
+        return
 
     with st.sidebar:
         st.markdown("## ApplySmart AI")
         st.caption("Your application command center")
         st.markdown(
-            '<span class="status-pill positive">Local workspace</span>',
+            '<span class="status-pill warning">Private alpha</span>',
             unsafe_allow_html=True,
         )
         page = st.radio(
             "Navigation",
-            ["Application", "Job Ranking", "Profile", "Tracker"],
+            ["Application", "Job Ranking", "Profile", "Tracker", "Feedback"],
             key="navigation",
             label_visibility="collapsed",
         )
         st.divider()
-        st.caption("Product Refinement · Demo Readiness")
+        remaining = max(
+            0,
+            max_ai_actions() - int(st.session_state.ai_actions_used),
+        )
+        st.caption(f"AI actions remaining this session: {remaining}")
+        st.caption("Private Alpha · Testing Build")
         st.caption("Profile → Match → Documents → Track")
+
+    if alpha_mode_enabled():
+        st.markdown(
+            '<div class="notice warning"><strong>Alpha Testing Version.</strong> '
+            "Generated resumes and cover letters are AI-assisted drafts. Review "
+            "every claim, date, skill, and sentence before using them in a real "
+            "application. Automated job submission is disabled.</div>",
+            unsafe_allow_html=True,
+        )
 
     if page == "Application":
         render_workspace()
@@ -1741,8 +1902,10 @@ def main():
         render_job_ranking()
     elif page == "Profile":
         render_profile()
-    else:
+    elif page == "Tracker":
         render_tracker()
+    else:
+        render_feedback()
 
 
 if __name__ == "__main__":

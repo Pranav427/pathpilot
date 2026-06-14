@@ -11,8 +11,10 @@ from tracker import (
     get_stats,
     init_db,
     list_applications,
+    list_feedback,
     list_job_search_runs,
     record_application,
+    record_feedback,
     record_job_search_run,
     update_application_status,
 )
@@ -153,6 +155,43 @@ def test_tracker_crud_with_temporary_database():
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)
+
+
+def test_feedback_is_validated_and_saved():
+    descriptor, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(descriptor)
+    os.remove(db_path)
+
+    try:
+        feedback_id = record_feedback(
+            tester_name="Alpha Tester",
+            category="UI or usability",
+            rating=4,
+            details="The tracker navigation was clear and easy to use.",
+            db_path=db_path,
+        )
+        feedback = list_feedback(db_path=db_path)
+
+        assert feedback_id == 1
+        assert feedback[0]["tester_name"] == "Alpha Tester"
+        assert feedback[0]["category"] == "UI or usability"
+        assert feedback[0]["rating"] == 4
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+
+def test_feedback_rejects_short_details():
+    try:
+        record_feedback(
+            category="Bug or crash",
+            details="short",
+            db_path=":memory:",
+        )
+    except ValueError as exc:
+        assert "at least 10 characters" in str(exc)
+    else:
+        raise AssertionError("Expected short feedback to be rejected")
 
 
 def test_ranking_history_returns_failure_details():

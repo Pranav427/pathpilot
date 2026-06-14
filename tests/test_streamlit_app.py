@@ -129,3 +129,19 @@ def test_tracker_explains_drafts_are_not_submitted_applications():
         "Generated drafts are not counted" in caption
         for caption in captions
     )
+
+
+def test_private_alpha_banner_and_feedback_page_are_available():
+    app = AppTest.from_file("app.py", default_timeout=10).run()
+
+    assert not app.exception
+    assert any(
+        "Alpha Testing Version" in markdown.value
+        for markdown in app.markdown
+    )
+
+    app.sidebar.radio[0].set_value("Feedback").run()
+
+    assert not app.exception
+    assert app.title[0].value == "Alpha Feedback"
+    assert app.button[0].label == "Submit feedback"

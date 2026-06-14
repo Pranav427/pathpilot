@@ -95,6 +95,70 @@ def init_db(db_path: str = DB_PATH):
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                tester_name         TEXT,
+                category            TEXT NOT NULL,
+                rating              INTEGER,
+                details             TEXT NOT NULL,
+                created_at          TEXT NOT NULL
+            )
+        """)
+
+
+def record_feedback(
+    category: str,
+    details: str,
+    rating: int | None = None,
+    tester_name: str = "",
+    db_path: str = DB_PATH,
+) -> int:
+    """Stores structured private-alpha feedback."""
+    clean_category = str(category).strip()
+    clean_details = str(details).strip()
+    if not clean_category:
+        raise ValueError("Feedback category is required.")
+    if len(clean_details) < 10:
+        raise ValueError("Please provide at least 10 characters of feedback.")
+    if rating is not None and not 1 <= int(rating) <= 5:
+        raise ValueError("Feedback rating must be between 1 and 5.")
+
+    init_db(db_path)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO feedback (
+                tester_name, category, rating, details, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                str(tester_name).strip(),
+                clean_category,
+                int(rating) if rating is not None else None,
+                clean_details,
+                now,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def list_feedback(limit: int = 100, db_path: str = DB_PATH) -> list[dict]:
+    """Returns recent feedback for local review and testing."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, tester_name, category, rating, details, created_at
+            FROM feedback
+            ORDER BY id DESC LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
 
 def record_job_search_run(
     ranked_jobs: list,

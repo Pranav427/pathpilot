@@ -144,6 +144,32 @@ Never commit `.env`; it is intentionally excluded by `.gitignore`.
 The remaining education, skills, projects, experience, and certifications are
 stored in `profile.py` and should be customized for the candidate.
 
+### Private Alpha Configuration
+
+The private testing build supports three deployment controls:
+
+```env
+APPLYSMART_ALPHA_MODE=true
+APP_PASSWORD=replace_with_a_strong_shared_password
+MAX_AI_ACTIONS_PER_SESSION=20
+```
+
+- `APP_PASSWORD` enables the shared-password gate. If it is empty, the gate is
+  disabled for local development.
+- `MAX_AI_ACTIONS_PER_SESSION` limits analysis, generation, and ranking usage
+  in each browser session.
+- Alpha mode displays a persistent warning that generated documents require
+  human review and that automated submission is disabled.
+
+For Streamlit Community Cloud, copy the safe structure from
+`.streamlit/secrets.toml.example` into the deployment's **Secrets** editor.
+Do not create or commit a real `.streamlit/secrets.toml`.
+
+The Feedback page stores invited-tester comments in the same local SQLite
+database as the tracker. Streamlit Community Cloud's filesystem can reset
+during restarts or redeployments, so export important feedback manually during
+the alpha. Persistent multi-user storage belongs in a later phase.
+
 ## Run The App
 
 Streamlit UI:
@@ -201,6 +227,14 @@ Job ranking runs:
 - Failed jobs
 - Ranking report path
 - Ranked jobs with score, verdict, URL, and gaps
+
+Private-alpha feedback:
+
+- Optional tester name
+- Category
+- One-to-five rating
+- Detailed comments
+- Submission date
 
 In the Streamlit Tracker, switch from `Applications` to `Ranking history` to
 inspect earlier URL batches and rejected links. Ranking history is intentionally
