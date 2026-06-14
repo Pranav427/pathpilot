@@ -114,6 +114,10 @@ Requirements:
 - An Anthropic API key by default, or a Gemini API key when using Gemini
 - `pdflatex` for PDF generation
 
+Streamlit Community Cloud installs the required LaTeX system packages from
+`packages.txt`. Local macOS development still requires a working LaTeX
+installation such as MacTeX.
+
 Clone the repository and create a virtual environment:
 
 ```bash

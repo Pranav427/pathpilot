@@ -1,3 +1,4 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from app import (
@@ -5,6 +6,12 @@ from app import (
     document_download_name,
     user_facing_error,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_password_gate_for_ui_tests(monkeypatch):
+    """Keeps local .env deployment settings out of UI regression tests."""
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
 
 
 def test_streamlit_primary_pages_and_short_jd_validation():
