@@ -5,6 +5,7 @@ from app import (
     document_download_name,
     user_facing_error,
 )
+from llm_utils import LLMServiceError
 
 
 def test_streamlit_primary_pages_and_short_jd_validation():
@@ -93,6 +94,19 @@ def test_user_facing_errors_explain_provider_quota_limits():
 
     assert "account limits" in message
     assert "RESOURCE_EXHAUSTED" not in message
+
+
+def test_normalized_ai_errors_are_actionable_and_safe():
+    message = user_facing_error(
+        LLMServiceError(
+            "authentication",
+            "provider diagnostic containing a secret",
+        ),
+        "Job analysis",
+    )
+
+    assert "API key was rejected" in message
+    assert "provider diagnostic" not in message
 
 
 def test_document_download_names_are_short_and_correct():

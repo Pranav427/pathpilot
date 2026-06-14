@@ -68,6 +68,7 @@ def test_pdf_failure_does_not_create_tracker_record():
             patch("application_service.save_cover_letter"),
             patch("application_service.compile_resume", return_value=False),
             patch("application_service.compile_letter", return_value=True),
+            patch("application_service.write_fallback_pdf", return_value=False),
             patch("application_service.record_application") as record,
         ):
             try:
@@ -106,6 +107,7 @@ def test_failed_save_removes_partial_output_files(tmp_path):
         patch("application_service.save_cover_letter", side_effect=write_cover),
         patch("application_service.compile_resume", return_value=False),
         patch("application_service.compile_letter", return_value=True),
+        patch("application_service.write_fallback_pdf", return_value=False),
     ):
         try:
             save_application_draft(draft, str(tmp_path))
@@ -115,6 +117,37 @@ def test_failed_save_removes_partial_output_files(tmp_path):
             raise AssertionError("Expected PDF failure to stop saving")
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_pdf_fallback_allows_cloud_save_without_latex(tmp_path):
+    draft = ApplicationDraft(
+        company_name="Test Company",
+        job_title="Engineer",
+        source_url="",
+        job_analysis={},
+        profile={"name": "Test Candidate", "skills": {}},
+        match={"match_score": 50},
+        resume={"professional_summary": "Verified Python experience."},
+        cover_letter="Dear Hiring Team,\n\nVerified Python experience.",
+        ats_report={"keyword_coverage": 50},
+    )
+
+    def write_pdf(_text, path):
+        with open(path, "wb") as file:
+            file.write(b"%PDF-1.4 fallback")
+        return True
+
+    with (
+        patch("application_service.compile_resume", return_value=False),
+        patch("application_service.compile_letter", return_value=False),
+        patch("application_service.write_fallback_pdf", side_effect=write_pdf),
+        patch("application_service.record_application", return_value=7),
+    ):
+        saved = save_application_draft(draft, str(tmp_path))
+
+    assert saved.application_id == 7
+    assert os.path.exists(saved.resume_pdf)
+    assert os.path.exists(saved.cover_letter_pdf)
 
 
 def test_tracker_crud_with_temporary_database():

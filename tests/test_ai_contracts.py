@@ -3,6 +3,9 @@ from unittest.mock import patch
 from analyzer import normalize_analysis_result
 from llm_utils import (
     GeminiClientAdapter,
+    LLMServiceError,
+    classify_llm_error,
+    create_message_with_retry,
     create_json_with_retry,
     get_llm_model,
     get_llm_provider,
@@ -37,6 +40,23 @@ class FakeClient:
         self.messages = FakeMessages()
 
 
+class AlwaysFailsMessages:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def create(self, **kwargs):
+        self.calls += 1
+        raise self.error
+
+
+class AlwaysFailsClient:
+    provider = "anthropic"
+
+    def __init__(self, error):
+        self.messages = AlwaysFailsMessages(error)
+
+
 def test_job_analysis_allows_empty_supported_categories():
     result = normalize_analysis_result(
         {
@@ -67,6 +87,59 @@ def test_malformed_llm_json_retries_and_recovers(monkeypatch):
 
     assert result["summary"] == "Role summary"
     assert client.messages.calls == 2
+
+
+def test_quota_failure_is_not_retried(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    client = AlwaysFailsClient(RuntimeError("status code: 429 rate limit"))
+
+    with patch("llm_utils.time.sleep") as sleep:
+        try:
+            create_message_with_retry(
+                client,
+                model="test",
+                max_tokens=50,
+                messages=[],
+                attempts=3,
+            )
+        except LLMServiceError as exc:
+            assert exc.code == "account_limit"
+        else:
+            raise AssertionError("Expected quota failure")
+
+    assert client.messages.calls == 1
+    sleep.assert_not_called()
+
+
+def test_temporary_provider_failure_retries(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    client = AlwaysFailsClient(RuntimeError("status code: 503 unavailable"))
+
+    with patch("llm_utils.time.sleep") as sleep:
+        try:
+            create_message_with_retry(
+                client,
+                model="test",
+                max_tokens=50,
+                messages=[],
+                attempts=3,
+            )
+        except LLMServiceError as exc:
+            assert exc.code == "temporary_unavailable"
+        else:
+            raise AssertionError("Expected temporary provider failure")
+
+    assert client.messages.calls == 3
+    assert sleep.call_count == 2
+
+
+def test_provider_error_classification_hides_raw_details():
+    error = classify_llm_error(
+        RuntimeError("authentication_error: invalid x-api-key secret-value")
+    )
+
+    assert error.code == "authentication"
+    assert "secret-value" not in str(error)
 
 
 def test_missing_anthropic_key_has_actionable_error(monkeypatch):

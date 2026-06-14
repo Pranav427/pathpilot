@@ -1,9 +1,153 @@
 import os
+from copy import deepcopy
 
 from dotenv import load_dotenv
 
 
 load_dotenv()
+
+
+def split_profile_items(value: str) -> list[str]:
+    """Splits comma or newline separated profile values without duplicates."""
+    items = []
+    seen = set()
+    for raw_item in str(value).replace("\n", ",").split(","):
+        item = raw_item.strip()
+        key = item.lower()
+        if item and key not in seen:
+            seen.add(key)
+            items.append(item)
+    return items
+
+
+def parse_profile_rows(value: str, fields: list[str]) -> list[dict]:
+    """Parses one pipe-delimited profile record per line."""
+    records = []
+    for line_number, raw_line in enumerate(str(value).splitlines(), 1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        values = [part.strip() for part in line.split("|")]
+        if len(values) != len(fields):
+            raise ValueError(
+                f"Line {line_number} must contain {len(fields)} values "
+                "separated by |."
+            )
+        records.append(dict(zip(fields, values)))
+    return records
+
+
+def build_session_profile(
+    *,
+    name: str,
+    email: str,
+    phone: str,
+    location: str,
+    linkedin: str,
+    github: str,
+    portfolio: str,
+    objective: str,
+    skills: dict[str, str],
+    education_text: str,
+    experience_text: str,
+    projects_text: str,
+    certifications_text: str,
+) -> dict:
+    """Builds a validated, session-only candidate profile from UI fields."""
+    profile = {
+        "name": str(name).strip(),
+        "email": str(email).strip(),
+        "phone": str(phone).strip(),
+        "linkedin": str(linkedin).strip(),
+        "github": str(github).strip(),
+        "portfolio": str(portfolio).strip(),
+        "location": str(location).strip(),
+        "objective": str(objective).strip(),
+        "skills": {
+            category: split_profile_items(value)
+            for category, value in skills.items()
+            if split_profile_items(value)
+        },
+        "education": parse_profile_rows(
+            education_text,
+            ["degree", "institution", "year", "grade"],
+        ),
+        "experience": [],
+        "projects": [],
+        "certifications": [
+            line.strip()
+            for line in str(certifications_text).splitlines()
+            if line.strip()
+        ],
+        "courses": [],
+        "publications": [],
+        "achievements": [],
+        "languages": [],
+        "interests": [],
+    }
+
+    for record in parse_profile_rows(
+        experience_text,
+        ["title", "company", "duration", "highlights"],
+    ):
+        highlights = split_profile_items(record.pop("highlights"))
+        profile["experience"].append(
+            {
+                **record,
+                "type": "Experience",
+                "description": " ".join(highlights),
+                "highlights": highlights,
+            }
+        )
+
+    for record in parse_profile_rows(
+        projects_text,
+        ["name", "domain", "tools", "description"],
+    ):
+        tools = split_profile_items(record.pop("tools"))
+        description = record.pop("description")
+        profile["projects"].append(
+            {
+                **record,
+                "tools": tools,
+                "description": description,
+                "highlights": [description] if description else [],
+                "github": profile["github"],
+            }
+        )
+
+    validate_candidate_profile(profile)
+    return profile
+
+
+def validate_candidate_profile(profile: dict) -> None:
+    """Requires enough verified evidence for responsible matching."""
+    missing = []
+    if len(str(profile.get("name", "")).strip()) < 2:
+        missing.append("name")
+    if len(str(profile.get("objective", "")).split()) < 8:
+        missing.append("professional summary")
+    skill_count = sum(
+        len(items) for items in profile.get("skills", {}).values()
+    )
+    if skill_count < 3:
+        missing.append("at least three skills")
+    if not profile.get("education"):
+        missing.append("education")
+    if not profile.get("projects") and not profile.get("experience"):
+        missing.append("at least one project or experience entry")
+    if missing:
+        raise ValueError(
+            "Complete the tester profile before using it: "
+            + ", ".join(missing)
+            + "."
+        )
+
+
+def copy_profile(profile: dict) -> dict:
+    """Returns an isolated profile copy for session state."""
+    return deepcopy(profile)
+
 
 def get_profile() -> dict:
     """

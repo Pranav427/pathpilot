@@ -125,7 +125,11 @@ Continuous improvement: the system learns from application outcomes and improves
 
 ## 8. Current System Architecture
 
-`profile.py`: stores the current candidate master profile. Input: none. Output: profile dictionary. Responsibilities: candidate facts, skills, projects, education, certifications, achievements.
+`profile.py`: stores the repository demo profile and validates session-created
+tester profiles. Input: optional tester identity, skills, education,
+experience, projects, and certifications. Output: a normalized profile
+dictionary. The Streamlit UI keeps tester data in browser session state, so
+testers can use their own evidence without modifying the repository profile.
 
 `job_fetcher.py`: fetches one public job URL and extracts readable job description text. Input: URL. Output: company, title, JD text, source URL, extraction quality. Responsibility: public/static job page ingestion, early rejection of search/listing/career-hub pages, employer-name inference for common aggregator pages, and manual fallback when blocked.
 
@@ -140,15 +144,23 @@ Continuous improvement: the system learns from application outcomes and improves
 Application-only familiarity is excluded from the evidence-based fit score.
 Explicit experienced-hire requirements can apply a visible seniority penalty.
 
-`resume.py`: generates structured tailored resume content and renders LaTeX PDF. Input: job analysis, profile, match. Output: resume dict, text file, PDF. Dependencies: the selected Gemini or Anthropic provider and LaTeX.
+`resume.py`: generates structured tailored resume content and renders the
+preferred LaTeX PDF. Input: job analysis, profile, match. Output: resume dict,
+text file, PDF. If LaTeX is unavailable on the host, `application_service.py`
+uses a pure-Python ReportLab fallback so saving and downloading can continue.
 
-`cover_letter.py`: generates cover letter and renders PDF. Input: job analysis, profile, match, company, role, tone. Output: letter text and PDF.
+`cover_letter.py`: generates a cover letter and renders the preferred LaTeX
+PDF. Input: job analysis, profile, match, company, role, tone. Output: letter
+text and PDF. The same cloud-safe PDF fallback applies when LaTeX is missing.
 
 `quality.py`: checks ATS quality. Input: resume content and job analysis. Output: keyword coverage, missing terms, quality issues, and a note explaining that low keyword coverage can come from noisy or generic job-page terms. Obvious job-title, branding, and generic company-language terms are excluded from the coverage calculation.
 
 `tracker.py`: stores generated application drafts and job ranking sessions in SQLite. Input: company, role, scores, document paths, ranking results, and reports. Output: application ID, search run ID, application history, and ranking history. The Streamlit tracker presents applications and ranking experiments as separate views so ranked links are not mistaken for submitted applications.
 
-`llm_utils.py`: shared AI request retry, JSON extraction, and required-key validation.
+`llm_utils.py`: shared AI request retry, JSON extraction, required-key
+validation, and normalized provider-error classification. Permanent
+authentication, permission, quota, and model errors fail immediately;
+temporary service and timeout errors use bounded retries.
 
 `utils.py`: shared formatting helpers for filenames, display URLs, phone numbers, and LaTeX escaping.
 
@@ -372,9 +384,14 @@ Current stage: Product Refinement & Demo Readiness; the single-job Streamlit wor
 
 Strengths: clear modular structure, working URL/manual JD intake, AI analysis, matching, deterministic scoring, grounded evidence summaries, fact-safe resume projects, constrained cover letters, ATS checking, source tracking, application tracking, document preview/download, and SQLite ranking history.
 
-Weaknesses: multi-job ranking is not yet exposed in the UI, no broad job-board search, no production database, no multi-user support, limited semantic matching, and no outcome analytics.
+Weaknesses: no broad job-board discovery, no production database, tester
+profiles are session-only, SQLite and local document paths are not durable on
+ephemeral cloud hosts, there is no authenticated multi-user isolation, semantic
+matching remains limited, and there is no outcome analytics.
 
-Missing components: multi-job Streamlit workspace, broader search connectors, `insights.py`, production database implementation, auth, and production deployment.
+Missing components: broader search connectors, `insights.py`, production
+database implementation, authentication, durable document storage, and
+production deployment.
 
 Next priority: validate the multi-job workspace against varied public job pages while keeping the CLI available.
 
@@ -397,7 +414,8 @@ Top risks:
 
 Top 10 improvements:
 
-1. Add the multi-job ranking and shortlisting workflow to Streamlit.
+1. Complete alpha stabilization and test the current workflow with session
+   tester profiles.
 2. Add small batch limits and per-job failure isolation.
 3. Add user approval before batch document generation.
 4. Add basic outcome analytics after batch UI stability.
@@ -408,7 +426,9 @@ Top 10 improvements:
 9. Add production logging and cost tracking.
 10. Add skill-gap learning recommendations.
 
-Fastest path to the next milestone: expose multi-job ranking through the verified Streamlit workflow and test it with real job seekers.
+Fastest path to the next milestone: finish alpha stabilization, validate the
+session-profile workflow with trusted testers, then introduce persistent
+multi-user profiles and tracker storage.
 
 Fastest path to SaaS: add Streamlit/FastAPI UI, user profiles, PostgreSQL, document storage, and subscriptions.
 
@@ -416,4 +436,7 @@ Fastest path to revenue: target students/freshers with premium ATS reports, tail
 
 Fastest path to interview success: rank jobs by realistic fit, generate evidence-based resumes, and track outcomes.
 
-Final recommendation: continue building in phases. Do not jump directly to SaaS or agents. The Phase 4 local MVP is complete; next, build the controlled multi-job Streamlit workspace.
+Final recommendation: continue building in phases. Do not jump directly to
+automatic applications, public SaaS, or autonomous agents. The local MVP and
+controlled multi-job workspace are complete; finish alpha stabilization before
+adding daily job discovery or persistent multi-user infrastructure.

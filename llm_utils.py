@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import socket
 import time
 from typing import Iterable
 
@@ -20,6 +21,114 @@ PROVIDER_SETTINGS = {
         "default_model": "claude-sonnet-4-5",
     },
 }
+
+
+class LLMServiceError(RuntimeError):
+    """Normalized AI-provider failure safe for application-level handling."""
+
+    def __init__(self, code: str, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+
+
+def classify_llm_error(exc: Exception) -> LLMServiceError:
+    """Maps provider-specific failures to stable ApplySmart error categories."""
+    if isinstance(exc, LLMServiceError):
+        return exc
+
+    text = str(exc).strip()
+    lower = text.lower()
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+    if status_code is None:
+        status_match = re.search(r"status(?:\s+code)?\s*[:=]\s*(\d{3})", lower)
+        if status_match:
+            status_code = int(status_match.group(1))
+
+    if status_code == 401 or any(
+        marker in lower
+        for marker in (
+            "authentication_error",
+            "invalid api key",
+            "invalid x-api-key",
+            "authentication method",
+            "unauthorized",
+        )
+    ):
+        return LLMServiceError(
+            "authentication",
+            "The configured AI API key was rejected.",
+        )
+
+    if status_code == 403 or any(
+        marker in lower
+        for marker in ("permission_error", "permission denied", "forbidden")
+    ):
+        return LLMServiceError(
+            "permission",
+            "The configured AI API key does not have permission for this request.",
+        )
+
+    if status_code == 404 or any(
+        marker in lower
+        for marker in ("model not found", "not_found_error", "unknown model")
+    ):
+        return LLMServiceError(
+            "model_unavailable",
+            "The configured AI model is unavailable for this account.",
+        )
+
+    if status_code == 429 or any(
+        marker in lower
+        for marker in (
+            "credit balance",
+            "rate limit",
+            "quota exceeded",
+            "resource_exhausted",
+        )
+    ):
+        return LLMServiceError(
+            "account_limit",
+            "The AI account has reached a credit, quota, or rate limit.",
+        )
+
+    if status_code in {408, 500, 502, 503, 504, 529} or any(
+        marker in lower
+        for marker in (
+            "overloaded_error",
+            "service unavailable",
+            "temporarily unavailable",
+            "connection reset",
+            "connection aborted",
+        )
+    ):
+        return LLMServiceError(
+            "temporary_unavailable",
+            "The AI service is temporarily unavailable.",
+            retryable=True,
+        )
+
+    if isinstance(exc, (TimeoutError, socket.timeout)) or any(
+        marker in lower for marker in ("timed out", "timeout")
+    ):
+        return LLMServiceError(
+            "timeout",
+            "The AI request timed out.",
+            retryable=True,
+        )
+
+    return LLMServiceError(
+        "request_failed",
+        "The AI request failed.",
+    )
+
+
+def _retry_delay(attempt: int) -> float:
+    """Returns a short bounded backoff for transient provider failures."""
+    return min(1.5 * attempt, 4.5)
 
 
 class _TextContent:
@@ -176,11 +285,11 @@ def create_message_with_retry(
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
-            last_error = exc
-            if attempt == attempts:
-                break
-            time.sleep(1.5 * attempt)
-    raise RuntimeError(f"AI request failed after {attempts} attempts: {last_error}")
+            last_error = classify_llm_error(exc)
+            if not last_error.retryable or attempt == attempts:
+                raise last_error from exc
+            time.sleep(_retry_delay(attempt))
+    raise last_error
 
 
 def create_json_with_retry(
@@ -210,11 +319,16 @@ def create_json_with_retry(
             return require_keys(data, required_keys, source)
         except (KeyboardInterrupt, SystemExit):
             raise
-        except Exception as exc:
+        except (json.JSONDecodeError, ValueError) as exc:
             last_error = exc
             if attempt == attempts:
-                break
-            time.sleep(1.5 * attempt)
-    raise RuntimeError(
-        f"{source} failed after {attempts} attempts: {last_error}"
-    )
+                raise RuntimeError(
+                    f"{source} returned invalid structured output."
+                ) from exc
+            time.sleep(_retry_delay(attempt))
+        except Exception as exc:
+            last_error = classify_llm_error(exc)
+            if not last_error.retryable or attempt == attempts:
+                raise last_error from exc
+            time.sleep(_retry_delay(attempt))
+    raise last_error

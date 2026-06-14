@@ -30,7 +30,8 @@ from job_search import (
     rank_jobs_from_urls,
     save_ranked_jobs_report,
 )
-from profile import get_profile
+from llm_utils import LLMServiceError
+from profile import build_session_profile, copy_profile, get_profile
 from quality import audit_application_documents
 from resume import resume_to_text
 from tracker import (
@@ -59,6 +60,37 @@ def user_facing_error(exc: Exception, action: str) -> str:
     """Returns useful UI feedback without exposing provider internals."""
     message = str(exc).strip()
     lower = message.lower()
+
+    if isinstance(exc, LLMServiceError):
+        messages = {
+            "authentication": (
+                "The AI API key was rejected. The app owner must update the "
+                "deployment secret before analysis can continue."
+            ),
+            "permission": (
+                "The AI account does not have access to the configured model. "
+                "The app owner must review the provider permissions."
+            ),
+            "model_unavailable": (
+                "The configured AI model is unavailable. The app owner must "
+                "select a model enabled for this API account."
+            ),
+            "account_limit": (
+                "The AI account has reached its usage limit. Please try again "
+                "after the app owner restores API capacity."
+            ),
+            "temporary_unavailable": (
+                "The AI service is temporarily unavailable. Please try again "
+                "in a few minutes."
+            ),
+            "timeout": (
+                f"{action} timed out. Check the connection and try again."
+            ),
+        }
+        return messages.get(
+            exc.code,
+            f"{action} could not be completed. Please try again.",
+        )
 
     if "api key is not configured" in lower or "authentication method" in lower:
         return (
@@ -493,6 +525,9 @@ def init_state():
         "ranking_run_id": None,
         "shortlist": [],
         "history_load_error": "",
+        "profile_mode": "Demo profile",
+        "session_profile": copy_profile(get_profile()),
+        "profile_saved": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -540,11 +575,36 @@ def reset_ranking():
     st.session_state.shortlist = []
 
 
+def active_profile() -> dict:
+    """Returns an isolated copy of the profile selected for this session."""
+    if st.session_state.get("profile_mode") == "Tester profile":
+        return copy_profile(st.session_state.session_profile)
+    return copy_profile(get_profile())
+
+
+def activate_demo_profile():
+    """Restores the repository profile and clears profile-dependent results."""
+    st.session_state.profile_mode = "Demo profile"
+    st.session_state.session_profile = copy_profile(get_profile())
+    st.session_state.profile_saved = False
+    invalidate_application_results()
+    reset_ranking()
+
+
+def activate_tester_profile(profile: dict):
+    """Uses a validated tester profile only for the current browser session."""
+    st.session_state.profile_mode = "Tester profile"
+    st.session_state.session_profile = copy_profile(profile)
+    st.session_state.profile_saved = True
+    invalidate_application_results()
+    reset_ranking()
+
+
 def load_ranked_job(job):
     """Loads a ranked job into the existing single-job review workflow."""
     fetched = job.fetched_job
     st.session_state.job_analysis = job.job_analysis
-    st.session_state.base_profile = get_profile()
+    st.session_state.base_profile = active_profile()
     st.session_state.base_match = job.match
     st.session_state.draft = None
     st.session_state.saved = None
@@ -566,7 +626,12 @@ def load_historical_job(job: dict):
     try:
         fetched = fetch_job_from_url(job["source_url"])
         analysis = json.loads(job.get("job_analysis_json") or "{}")
-        match = json.loads(job.get("match_json") or "{}")
+        profile = active_profile()
+        _, _, match = prepare_match(
+            fetched.job_description,
+            job_analysis=analysis,
+            profile=profile,
+        )
         historical_job = type(
             "HistoricalRankedJob",
             (),
@@ -622,24 +687,222 @@ def verdict_color(verdict: str) -> str:
 
 
 def render_profile():
-    profile = get_profile()
+    profile = active_profile()
     render_page_header(
         "Candidate Profile",
-        "Your verified source of truth for matching and document generation.",
+        "Choose the evidence used for matching and document generation.",
     )
+
+    mode_col, status_col = st.columns([1, 2])
+    with mode_col:
+        profile_mode = st.selectbox(
+            "Active profile",
+            ["Demo profile", "Tester profile"],
+            index=0 if st.session_state.profile_mode == "Demo profile" else 1,
+            help=(
+                "Tester profiles remain only in this browser session and do "
+                "not modify profile.py."
+            ),
+        )
+    with status_col:
+        if profile_mode == "Demo profile":
+            st.info("Using the repository demo profile.")
+            if st.session_state.profile_mode != "Demo profile":
+                activate_demo_profile()
+                st.rerun()
+        elif not st.session_state.profile_saved:
+            st.warning("Complete and save the tester profile below.")
+        else:
+            st.success("Using a session-only tester profile.")
+
+    if profile_mode == "Tester profile":
+        current = (
+            st.session_state.session_profile
+            if st.session_state.profile_mode == "Tester profile"
+            else {}
+        )
+        current_skills = current.get("skills", {})
+        with st.form("tester_profile_form"):
+            st.subheader("Tester profile")
+            st.caption(
+                "Personal data stays in this browser session. Use only facts "
+                "you can explain and verify."
+            )
+            identity_left, identity_right = st.columns(2)
+            with identity_left:
+                name = st.text_input("Full name *", value=current.get("name", ""))
+                email = st.text_input("Email", value=current.get("email", ""))
+                phone = st.text_input("Phone", value=current.get("phone", ""))
+                location = st.text_input(
+                    "Location",
+                    value=current.get("location", ""),
+                )
+            with identity_right:
+                linkedin = st.text_input(
+                    "LinkedIn",
+                    value=current.get("linkedin", ""),
+                )
+                github = st.text_input(
+                    "GitHub",
+                    value=current.get("github", ""),
+                )
+                portfolio = st.text_input(
+                    "Portfolio",
+                    value=current.get("portfolio", ""),
+                )
+            objective = st.text_area(
+                "Professional summary *",
+                value=current.get("objective", ""),
+                height=120,
+                placeholder=(
+                    "Summarize your education, verified strengths, projects, "
+                    "experience, and target roles."
+                ),
+            )
+
+            st.markdown("**Skills**")
+            skill_columns = st.columns(2)
+            skill_fields = {}
+            skill_categories = [
+                "Programming Languages",
+                "Artificial Intelligence & Machine Learning",
+                "Deep Learning & Computer Vision",
+                "Software Fundamentals",
+                "Data Analysis",
+                "Libraries & Frameworks",
+                "Databases",
+                "Tools & Platforms",
+                "Soft Skills",
+            ]
+            for index, category in enumerate(skill_categories):
+                with skill_columns[index % 2]:
+                    skill_fields[category] = st.text_area(
+                        category,
+                        value=", ".join(current_skills.get(category, [])),
+                        height=90,
+                        placeholder="Comma-separated verified skills",
+                    )
+
+            st.markdown("**Evidence**")
+            education_text = st.text_area(
+                "Education *",
+                value="\n".join(
+                    " | ".join(
+                        [
+                            item.get("degree", ""),
+                            item.get("institution", ""),
+                            item.get("year", ""),
+                            item.get("grade", ""),
+                        ]
+                    )
+                    for item in current.get("education", [])
+                ),
+                placeholder=(
+                    "One per line: Degree | Institution | Year | Grade"
+                ),
+            )
+            experience_text = st.text_area(
+                "Experience",
+                value="\n".join(
+                    " | ".join(
+                        [
+                            item.get("title", ""),
+                            item.get("company", ""),
+                            item.get("duration", ""),
+                            ", ".join(item.get("highlights", [])),
+                        ]
+                    )
+                    for item in current.get("experience", [])
+                ),
+                placeholder=(
+                    "One per line: Role | Company | Duration | "
+                    "Achievement one, Achievement two"
+                ),
+            )
+            projects_text = st.text_area(
+                "Projects",
+                value="\n".join(
+                    " | ".join(
+                        [
+                            item.get("name", ""),
+                            item.get("domain", ""),
+                            ", ".join(item.get("tools", [])),
+                            item.get("description", ""),
+                        ]
+                    )
+                    for item in current.get("projects", [])
+                ),
+                placeholder=(
+                    "One per line: Project | Domain | Tool one, Tool two | "
+                    "What you built and measured"
+                ),
+            )
+            certifications_text = st.text_area(
+                "Certifications",
+                value="\n".join(current.get("certifications", [])),
+                placeholder="One verified certification per line",
+            )
+            save_profile = st.form_submit_button(
+                "Use this tester profile",
+                type="primary",
+                use_container_width=True,
+            )
+            if save_profile:
+                try:
+                    tester_profile = build_session_profile(
+                        name=name,
+                        email=email,
+                        phone=phone,
+                        location=location,
+                        linkedin=linkedin,
+                        github=github,
+                        portfolio=portfolio,
+                        objective=objective,
+                        skills=skill_fields,
+                        education_text=education_text,
+                        experience_text=experience_text,
+                        projects_text=projects_text,
+                        certifications_text=certifications_text,
+                    )
+                    activate_tester_profile(tester_profile)
+                    st.success(
+                        "Tester profile activated for this browser session."
+                    )
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
+        if st.session_state.profile_mode != "Tester profile":
+            return
+        profile = active_profile()
 
     identity, links = st.columns([1.4, 1])
     with identity:
         st.subheader(profile["name"])
         st.caption("Candidate identity")
-        st.write(f"Location: {profile['location']}")
-        st.write(f"Email: {profile['email']}")
-        st.write(f"Phone: {profile['phone']}")
+        for label, value in (
+            ("Location", profile.get("location")),
+            ("Email", profile.get("email")),
+            ("Phone", profile.get("phone")),
+        ):
+            if value:
+                st.write(f"{label}: {value}")
     with links:
         render_section_label("Professional links")
-        st.link_button("LinkedIn", profile["linkedin"], use_container_width=True)
-        st.link_button("GitHub", profile["github"], use_container_width=True)
-        st.link_button("Portfolio", profile["portfolio"], use_container_width=True)
+        available_links = [
+            (label, profile.get(key))
+            for label, key in (
+                ("LinkedIn", "linkedin"),
+                ("GitHub", "github"),
+                ("Portfolio", "portfolio"),
+            )
+            if profile.get(key)
+        ]
+        if available_links:
+            for label, url in available_links:
+                st.link_button(label, url, use_container_width=True)
+        else:
+            st.caption("No professional links provided.")
 
     render_section_label("Profile evidence")
     skills_tab, experience_tab, education_tab, certification_tab = st.tabs(
@@ -916,7 +1179,10 @@ def render_workspace():
     if analyze_clicked:
         try:
             with st.spinner("Analyzing the role and calculating fit..."):
-                analysis, profile, match = prepare_match(job_description)
+                analysis, profile, match = prepare_match(
+                    job_description,
+                    profile=active_profile(),
+                )
             st.session_state.job_analysis = analysis
             st.session_state.base_profile = profile
             st.session_state.base_match = match
@@ -1120,7 +1386,7 @@ def render_job_ranking():
             try:
                 ranked_jobs, failures = rank_jobs_from_urls(
                     candidate_urls,
-                    get_profile(),
+                    active_profile(),
                     progress_callback=update_progress,
                 )
                 listing_failures = [
@@ -1457,7 +1723,7 @@ def render_tracker():
             unsafe_allow_html=True,
         )
         return
-    profile = get_profile()
+    profile = active_profile()
 
     for application in applications:
         title = (

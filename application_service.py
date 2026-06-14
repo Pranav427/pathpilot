@@ -297,6 +297,93 @@ def build_tracker_notes(match: dict) -> str:
     )
 
 
+def write_fallback_pdf(text: str, output_path: str) -> bool:
+    """Creates a readable PDF without relying on a system LaTeX install."""
+    try:
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            PageBreak,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+        )
+        from xml.sax.saxutils import escape
+    except ImportError:
+        return False
+
+    try:
+        styles = getSampleStyleSheet()
+        body_style = ParagraphStyle(
+            "ApplySmartBody",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=9.5,
+            leading=12,
+            spaceAfter=4,
+        )
+        heading_style = ParagraphStyle(
+            "ApplySmartHeading",
+            parent=styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            leading=14,
+            spaceBefore=7,
+            spaceAfter=4,
+        )
+        name_style = ParagraphStyle(
+            "ApplySmartName",
+            parent=styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=16,
+            leading=19,
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        )
+
+        document = SimpleDocTemplate(
+            output_path,
+            pagesize=A4,
+            rightMargin=16 * mm,
+            leftMargin=16 * mm,
+            topMargin=14 * mm,
+            bottomMargin=14 * mm,
+            title="ApplySmart AI application document",
+        )
+        story = []
+        first_content_line = True
+        for raw_line in str(text).splitlines():
+            line = raw_line.strip()
+            if not line:
+                story.append(Spacer(1, 4))
+                continue
+            if line == "\f":
+                story.append(PageBreak())
+                continue
+
+            escaped_line = escape(line)
+            if first_content_line:
+                style = name_style
+                first_content_line = False
+            elif line.isupper() and len(line) <= 45:
+                style = heading_style
+            else:
+                style = body_style
+
+            if line.startswith(("- ", "• ")):
+                escaped_line = f"&#8226; {escape(line[2:].strip())}"
+            story.append(Paragraph(escaped_line, style))
+
+        document.build(story)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        return False
+
+
 def save_application_draft(
     draft: ApplicationDraft,
     output_dir: str = "outputs",
@@ -337,6 +424,17 @@ def save_application_draft(
             ),
             letter_pdf,
         )
+
+        if not resume_ok:
+            resume_ok = write_fallback_pdf(
+                resume_to_text(draft.resume),
+                resume_pdf,
+            )
+        if not letter_ok:
+            letter_ok = write_fallback_pdf(
+                draft.cover_letter,
+                letter_pdf,
+            )
 
         if not resume_ok or not letter_ok:
             failed = []

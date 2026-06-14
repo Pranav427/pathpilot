@@ -16,6 +16,7 @@ before these safeguards were added.
 Implemented:
 
 - Candidate master profile
+- Session-isolated tester profiles for local and controlled usability testing
 - Manual job description input
 - Public job URL fetching
 - Search/listing-page preflight that prevents misleading fit scores
@@ -34,7 +35,7 @@ Implemented:
 - ATS keyword coverage check
 - ATS explanation note for noisy/generic keyword coverage
 - ATS filtering for obvious job-title, branding, and generic company-language noise
-- PDF and text output
+- PDF and text output with a pure-Python PDF fallback when LaTeX is unavailable
 - SQLite application draft tracking
 - SQLite job ranking session tracking
 - Tracker views for approved applications and job-ranking history
@@ -47,6 +48,8 @@ Implemented:
 - Short, collision-safe output filenames that preserve application history
 - Regression tests for scoring, ATS matching, profile confirmation, generation safety, job inputs, and tracker behavior
 - User-safe Streamlit error messages with technical details retained in logs
+- Classified AI-provider failures that stop retrying permanent authentication,
+  quota, permission, and model errors
 
 Not yet implemented:
 
@@ -112,7 +115,8 @@ Requirements:
 
 - Python 3.11 recommended
 - An Anthropic API key by default, or a Gemini API key when using Gemini
-- `pdflatex` for PDF generation
+- Optional `pdflatex` for the preferred resume and cover-letter layout. When it
+  is unavailable, ApplySmart uses its bundled Python PDF fallback.
 
 Clone the repository and create a virtual environment:
 
@@ -141,8 +145,10 @@ provide the corresponding API key plus candidate contact details. Claude
 Sonnet is the default model.
 Never commit `.env`; it is intentionally excluded by `.gitignore`.
 
-The remaining education, skills, projects, experience, and certifications are
-stored in `profile.py` and should be customized for the candidate.
+The repository demo profile is stored in `profile.py`. In Streamlit, testers
+can instead select `Tester profile` and enter their own verified evidence.
+Tester-profile data remains in that browser session and does not modify
+`profile.py`.
 
 ## Run The App
 
@@ -230,6 +236,11 @@ For low-fit jobs, the system still generates drafts but warns the user to review
 - Historical documents generated before the current factuality safeguards must
   be reviewed when the Tracker displays a legacy warning.
 - Current tracker records generated drafts, not confirmed job submissions.
+- Tester profiles are session-only. Refreshing or restarting the browser can
+  remove them until persistent multi-user storage is implemented.
+- SQLite tracker data and generated files are appropriate for local use, but
+  Streamlit Cloud may reset them when the app restarts. Persistent hosted
+  storage belongs to the later multi-user database phase.
 - Matching is transparent and conservative, but still not as strong as embeddings, semantic search, or outcome-trained ranking.
 - ATS coverage is an internal keyword-coverage heuristic, not an official score
   from a hiring platform or commercial ATS.
