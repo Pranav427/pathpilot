@@ -4,7 +4,23 @@ import os
 import re
 import subprocess
 from datetime import date
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(path: str = ".env") -> None:
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
 from analyzer import analyze_job
 from profile import get_profile
 from matcher import match_profile_to_job
@@ -18,8 +34,11 @@ from utils import (
 )
 
 load_dotenv()
-client = get_llm_client()
-MODEL = get_llm_model()
+
+
+def llm_runtime():
+    """Returns the configured LLM client and model when generation is requested."""
+    return get_llm_client(), get_llm_model()
 
 
 def clean_cover_letter_style(text: str) -> str:
@@ -377,9 +396,10 @@ Sincerely,
 {profile["name"]}
 """
 
+    client, model = llm_runtime()
     response = create_message_with_retry(
         client,
-        model=MODEL,
+        model=model,
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -415,7 +435,7 @@ Return only the corrected cover letter.
 """
         response = create_message_with_retry(
             client,
-            model=MODEL,
+            model=model,
             max_tokens=800,
             messages=[{"role": "user", "content": correction_prompt}],
         )

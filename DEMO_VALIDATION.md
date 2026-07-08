@@ -1,4 +1,4 @@
-# ApplySmart AI Demo Validation
+# PathPilot Demo Validation
 
 Use this checklist before a portfolio demonstration or milestone review.
 

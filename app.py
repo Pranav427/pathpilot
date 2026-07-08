@@ -1,14 +1,44 @@
-"""Streamlit interface for the ApplySmart AI application workflow."""
+"""Streamlit interface for the PathPilot application workflow."""
 
 import json
 import hashlib
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timezone
 from html import escape
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(path: str = ".env") -> None:
+        """Small fallback for environments missing python-dotenv."""
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+
+load_dotenv()
+
+JOB_STORE_REFRESH_TTL_MINUTES = 30
+DEFAULT_DISCOVERY_INVENTORY_WINDOW_DAYS = 90
+DISCOVERY_QUALITY_POLICY_VERSION = "2026-07-04-top-recommended-v3"
+RECOMMENDED_DISCOVERY_LIMIT = 20
+RECOMMENDED_DISCOVERY_MIN_SCORE = 75
+PRODUCT_NAME = "PathPilot"
+PRODUCT_TAGLINE = "Navigate your career with intelligence."
+PRODUCT_DESCRIPTION = "The intelligent platform for modern careers."
 
 from application_service import (
     MIN_JD_WORDS,
@@ -24,11 +54,47 @@ from job_fetcher import (
     fetch_job_from_url,
     is_likely_job_listing,
 )
+from job_discovery import (
+    AdzunaJobProvider,
+    AshbyJobProvider,
+    CombinedJobProvider,
+    EarlyCareerWebJobProvider,
+    GreenhouseJobProvider,
+    JobDiscoveryError,
+    JoobleJobProvider,
+    LeverJobProvider,
+    LocalSampleJobProvider,
+    SerpApiGoogleJobsProvider,
+    TARGET_DISCOVERY_RESULTS,
+    clear_discovery_provider_caches,
+    discover_jobs,
+    early_career_sources_enabled,
+    experience_confidence,
+    is_direct_company_source,
+    is_broad_market_source,
+    jooble_is_configured,
+    parse_ashby_boards,
+    parse_greenhouse_boards,
+    parse_lever_sites,
+    serpapi_is_configured,
+)
 from job_search import (
     action_label,
     extract_urls_from_text,
     rank_jobs_from_urls,
     save_ranked_jobs_report,
+)
+from job_preferences import (
+    EXPERIENCE_LEVELS,
+    JOB_TYPES,
+    WORK_MODES,
+    build_job_preferences,
+    suggest_job_preferences,
+)
+from job_store import (
+    StoredJobProvider,
+    ingest_provider_jobs,
+    job_store_stats,
 )
 from llm_utils import LLMServiceError
 from profile import build_session_profile, copy_profile, get_profile
@@ -49,8 +115,8 @@ MAX_BATCH_URLS = 10
 LOGGER = logging.getLogger(__name__)
 
 st.set_page_config(
-    page_title="ApplySmart AI",
-    page_icon="AS",
+    page_title=PRODUCT_NAME,
+    page_icon="PP",
     layout="wide",
     initial_sidebar_state="auto",
 )
@@ -95,7 +161,7 @@ def user_facing_error(exc: Exception, action: str) -> str:
     if "api key is not configured" in lower or "authentication method" in lower:
         return (
             "AI authentication is not configured. Add the API key for your "
-            "selected LLM_PROVIDER to .env and restart ApplySmart AI."
+            f"selected LLM_PROVIDER to .env and restart {PRODUCT_NAME}."
         )
     if any(
         term in lower
@@ -511,6 +577,7 @@ def init_state():
         "draft": None,
         "saved": None,
         "source_url": "",
+        "application_apply_url": "",
         "company_name": "",
         "job_title": "",
         "job_description": "",
@@ -528,6 +595,15 @@ def init_state():
         "profile_mode": "Demo profile",
         "session_profile": copy_profile(get_profile()),
         "profile_saved": False,
+        "job_preferences": None,
+        "preferences_saved": False,
+        "discovered_jobs": [],
+        "discovery_rejections": [],
+        "job_inbox_status": {},
+        "discovery_preferences_snapshot": None,
+        "discovery_source": "All live sources",
+        "pending_discovered_job": None,
+        "loaded_job_notice": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -542,6 +618,7 @@ def reset_workflow():
         "draft",
         "saved",
         "source_url",
+        "application_apply_url",
         "company_name",
         "job_title",
         "job_description",
@@ -549,6 +626,7 @@ def reset_workflow():
         "fetch_error",
         "fetch_error_url",
         "input_method",
+        "loaded_job_notice",
     ):
         if key in {"job_analysis", "base_profile", "base_match", "draft", "saved"}:
             st.session_state[key] = None
@@ -575,6 +653,53 @@ def reset_ranking():
     st.session_state.shortlist = []
 
 
+def reset_discovery():
+    """Clears profile-dependent discovery preferences and inbox results."""
+    clear_discovery_provider_caches()
+    st.session_state.job_preferences = None
+    st.session_state.preferences_saved = False
+    st.session_state.discovered_jobs = []
+    st.session_state.discovery_rejections = []
+    st.session_state.job_inbox_status = {}
+    st.session_state.discovery_preferences_snapshot = None
+    st.session_state.discovery_source = "All live sources"
+
+
+def clear_discovery_results():
+    """Invalidates inbox results without removing saved preferences."""
+    clear_discovery_provider_caches()
+    st.session_state.discovered_jobs = []
+    st.session_state.discovery_rejections = []
+    st.session_state.job_inbox_status = {}
+    st.session_state.discovery_preferences_snapshot = None
+
+
+def discovery_inventory_window_days(preferences) -> int:
+    """Returns how far back the local source inventory should be ranked."""
+    configured = os.getenv("APPLYSMART_JOB_INVENTORY_WINDOW_DAYS", "").strip()
+    try:
+        window = (
+            int(configured)
+            if configured
+            else DEFAULT_DISCOVERY_INVENTORY_WINDOW_DAYS
+        )
+    except ValueError:
+        window = DEFAULT_DISCOVERY_INVENTORY_WINDOW_DAYS
+    if preferences is not None:
+        window = max(window, int(preferences.maximum_job_age_days))
+    return max(1, min(window, 365))
+
+
+def is_recommended_discovery_job(job) -> bool:
+    """Returns true for high-signal jobs shown in the default inbox view."""
+    if experience_confidence(job) not in {
+        "Verified selected level",
+        "Likely entry-level",
+    }:
+        return False
+    return job.relevance_score >= RECOMMENDED_DISCOVERY_MIN_SCORE
+
+
 def active_profile() -> dict:
     """Returns an isolated copy of the profile selected for this session."""
     if st.session_state.get("profile_mode") == "Tester profile":
@@ -589,6 +714,7 @@ def activate_demo_profile():
     st.session_state.profile_saved = False
     invalidate_application_results()
     reset_ranking()
+    reset_discovery()
 
 
 def activate_tester_profile(profile: dict):
@@ -598,6 +724,7 @@ def activate_tester_profile(profile: dict):
     st.session_state.profile_saved = True
     invalidate_application_results()
     reset_ranking()
+    reset_discovery()
 
 
 def load_ranked_job(job):
@@ -609,6 +736,7 @@ def load_ranked_job(job):
     st.session_state.draft = None
     st.session_state.saved = None
     st.session_state.source_url = fetched.source_url
+    st.session_state.application_apply_url = fetched.source_url
     st.session_state.company_name = fetched.company_name
     st.session_state.job_title = fetched.job_title
     st.session_state.job_description = fetched.job_description
@@ -619,6 +747,58 @@ def load_ranked_job(job):
     st.session_state.fetch_error_url = ""
     st.session_state.input_method = "Job URL"
     st.session_state.navigation = "Application"
+
+
+def queue_discovered_job(job):
+    """Queues a discovery selection for the next Streamlit render cycle."""
+    st.session_state.pending_discovered_job = job
+    st.session_state.job_inbox_status[job.provider_job_id] = "Prepared"
+
+
+def apply_pending_discovered_job():
+    """Applies queued navigation before the sidebar widget is instantiated."""
+    job = st.session_state.pop("pending_discovered_job", None)
+    if job is None:
+        return
+    reset_workflow()
+    st.session_state.company_name = job.company_name
+    st.session_state.job_title = job.job_title
+    st.session_state.job_description = job.job_description
+    st.session_state.source_url = job.source_url
+    st.session_state.application_apply_url = job.apply_url or job.source_url
+    st.session_state.input_method = "Paste description"
+    st.session_state.loaded_job_notice = (
+        f"Loaded from Job Discovery: {job.company_name} · {job.job_title}"
+    )
+    st.session_state.navigation = "Application"
+
+
+def preferred_tracker_apply_url(
+    current_source_url: str,
+    stored_source_url: str,
+    direct_apply_url: str,
+) -> str:
+    """Prefers direct apply links unless the visible source URL was edited."""
+    current_url = str(current_source_url or "").strip()
+    stored_source_url = str(stored_source_url or "").strip()
+    direct_apply_url = str(direct_apply_url or "").strip()
+    if direct_apply_url and (not current_url or current_url == stored_source_url):
+        return direct_apply_url
+    return current_url or direct_apply_url
+
+
+def tracker_apply_url(current_source_url: str) -> str:
+    """Returns the best user-facing apply link for the tracker record."""
+    return preferred_tracker_apply_url(
+        current_source_url,
+        st.session_state.get("source_url", ""),
+        st.session_state.get("application_apply_url", ""),
+    )
+
+
+def update_inbox_status(job_id: str, status: str):
+    """Updates a discovery result within the current browser session."""
+    st.session_state.job_inbox_status[job_id] = status
 
 
 def load_historical_job(job: dict):
@@ -931,9 +1111,838 @@ def render_profile():
             st.write(f"- {certification}")
 
 
+def render_job_discovery():
+    """Collects validated search intent before source discovery is enabled."""
+    render_page_header(
+        "Job Discovery",
+        f"Set the roles and constraints {PRODUCT_NAME} should use for job discovery.",
+    )
+    preferences = st.session_state.job_preferences
+    profile_suggestions = suggest_job_preferences(active_profile())
+    current = preferences.to_dict() if preferences else profile_suggestions
+
+    with st.form("job_preferences_form"):
+        st.subheader("Search preferences")
+        st.caption(
+            "Roles and skills are suggested from your active verified profile. "
+            "Review them, add your preferred locations, and confirm before "
+            "discovery."
+        )
+        role_col, location_col = st.columns(2)
+        with role_col:
+            target_roles = st.text_area(
+                "Target roles *",
+                value=", ".join(current.get("target_roles", [])),
+                height=100,
+                placeholder=(
+                    "Data Scientist, AI/ML Engineer, AI Engineer, "
+                    "Machine Learning Engineer"
+                ),
+            )
+        with location_col:
+            locations = st.text_area(
+                "Locations *",
+                value=", ".join(current.get("locations", [])),
+                height=100,
+                placeholder="Bengaluru, Hyderabad, Remote, India",
+            )
+
+        level_col, mode_col, type_col = st.columns(3)
+        with level_col:
+            experience_levels = st.multiselect(
+                "Experience level *",
+                EXPERIENCE_LEVELS,
+                default=current.get(
+                    "experience_levels",
+                    ["Internship", "Fresher / Entry level"],
+                ),
+            )
+        with mode_col:
+            work_modes = st.multiselect(
+                "Work mode *",
+                WORK_MODES,
+                default=current.get("work_modes", list(WORK_MODES)),
+            )
+        with type_col:
+            job_types = st.multiselect(
+                "Job type *",
+                JOB_TYPES,
+                default=current.get(
+                    "job_types",
+                    ["Full-time", "Internship"],
+                ),
+            )
+
+        skills_col, exclude_col = st.columns(2)
+        with skills_col:
+            preferred_skills = st.text_area(
+                "Preferred skills",
+                value=", ".join(current.get("preferred_skills", [])),
+                height=100,
+                placeholder="Python, Machine Learning, NLP, Deep Learning",
+                help=(
+                    "These guide discovery relevance. They do not become "
+                    "candidate skills or inflate fit scores."
+                ),
+            )
+        with exclude_col:
+            excluded_keywords = st.text_area(
+                "Excluded roles or keywords",
+                value=", ".join(current.get("excluded_keywords", [])),
+                height=100,
+                placeholder="Senior, Manager, Sales, 5+ years",
+            )
+
+        maximum_job_age_days = st.slider(
+            "Maximum job age",
+            min_value=1,
+            max_value=60,
+            value=current.get("maximum_job_age_days", 14),
+            format="%d days",
+        )
+        save_preferences = st.form_submit_button(
+            "Save job preferences",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if save_preferences:
+        try:
+            updated_preferences = build_job_preferences(
+                target_roles=target_roles,
+                locations=locations,
+                experience_levels=experience_levels,
+                work_modes=work_modes,
+                job_types=job_types,
+                preferred_skills=preferred_skills,
+                excluded_keywords=excluded_keywords,
+                maximum_job_age_days=maximum_job_age_days,
+            )
+            if updated_preferences != st.session_state.job_preferences:
+                clear_discovery_results()
+            st.session_state.job_preferences = updated_preferences
+            st.session_state.preferences_saved = True
+            st.success(
+                "Job preferences saved. Previous discovery results were "
+                "cleared because they may no longer match."
+            )
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+
+    if not st.session_state.preferences_saved:
+        st.markdown(
+            '<div class="empty-state">Save your preferences to prepare the '
+            "job-discovery pipeline.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    preferences = st.session_state.job_preferences
+    render_section_label("Active discovery profile")
+    st.markdown(
+        f"**{', '.join(preferences.target_roles)}**  \n"
+        f"{', '.join(preferences.locations)} · "
+        f"{', '.join(preferences.experience_levels)}"
+    )
+    st.caption(
+        f"{', '.join(preferences.work_modes)} · "
+        f"{', '.join(preferences.job_types)} · "
+        f"Posted within {preferences.maximum_job_age_days} days"
+    )
+
+    if preferences.excluded_keywords:
+        st.caption(
+            "Excluded keywords: "
+            + ", ".join(preferences.excluded_keywords)
+        )
+    try:
+        configured_boards = parse_greenhouse_boards()
+        greenhouse_configuration_error = ""
+    except ValueError as exc:
+        configured_boards = {}
+        greenhouse_configuration_error = str(exc)
+    try:
+        configured_lever_sites = parse_lever_sites()
+        lever_configuration_error = ""
+    except ValueError as exc:
+        configured_lever_sites = {}
+        lever_configuration_error = str(exc)
+    try:
+        configured_ashby_boards = parse_ashby_boards()
+        ashby_configuration_error = ""
+    except ValueError as exc:
+        configured_ashby_boards = {}
+        ashby_configuration_error = str(exc)
+    adzuna_app_id = os.getenv("ADZUNA_APP_ID", "").strip()
+    adzuna_app_key = os.getenv("ADZUNA_APP_KEY", "").strip()
+    adzuna_country = os.getenv("ADZUNA_COUNTRY", "in").strip().lower()
+    adzuna_configured = bool(adzuna_app_id and adzuna_app_key)
+    jooble_api_key = os.getenv("JOOBLE_API_KEY", "").strip()
+    jooble_country = os.getenv("JOOBLE_COUNTRY", "in").strip().lower()
+    jooble_configured = jooble_is_configured()
+    serpapi_api_key = os.getenv("SERPAPI_API_KEY", "").strip()
+    serpapi_configured = serpapi_is_configured()
+    early_career_sources_configured = early_career_sources_enabled()
+    sample_jobs_enabled = os.getenv(
+        "APPLYSMART_ENABLE_SAMPLE_JOBS",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    source_options = []
+    if configured_boards:
+        source_options.append("Live Greenhouse boards")
+    if configured_lever_sites:
+        source_options.append("Live Lever sites")
+    if configured_ashby_boards:
+        source_options.append("Live Ashby boards")
+    if early_career_sources_configured:
+        source_options.append("Early-career web sources")
+    if adzuna_configured:
+        source_options.append("Broad Adzuna search")
+    if jooble_configured:
+        source_options.append("Broad Jooble search")
+    if serpapi_configured:
+        source_options.append("Google Jobs search")
+    live_source_count = sum(
+        bool(value)
+        for value in (
+            configured_boards,
+            configured_lever_sites,
+            configured_ashby_boards,
+            early_career_sources_configured,
+            adzuna_configured,
+            jooble_configured,
+            serpapi_configured,
+        )
+    )
+    if live_source_count > 1:
+        source_options.insert(0, "All live sources")
+    if sample_jobs_enabled:
+        source_options.append("Sample catalog")
+    if not source_options:
+        st.error(
+            "No live discovery sources are configured. Enable curated live "
+            "sources, configure GREENHOUSE_BOARDS / LEVER_SITES / "
+            "ASHBY_BOARDS, or add Adzuna/Jooble credentials."
+        )
+        return
+    preferred_source = (
+        "All live sources"
+        if "All live sources" in source_options
+        else source_options[0]
+    )
+    source = st.segmented_control(
+        "Discovery source",
+        source_options,
+        default=(
+            st.session_state.discovery_source
+            if st.session_state.discovery_source in source_options
+            else preferred_source
+        ),
+        key="discovery_source_control",
+    )
+    if source != st.session_state.discovery_source:
+        clear_discovery_results()
+        st.session_state.discovery_source = source
+
+    if source == "Live Greenhouse boards":
+        st.success(
+            f"Live discovery is configured for {len(configured_boards)} "
+            "public Greenhouse board(s). Jobs are filtered using your saved "
+            "preferences before appearing in the inbox."
+        )
+        provider = GreenhouseJobProvider(configured_boards)
+        discover_label = "Discover live jobs now"
+        spinner_label = "Loading configured Greenhouse job boards..."
+    elif source == "Live Lever sites":
+        st.success(
+            f"Live discovery is configured for {len(configured_lever_sites)} "
+            "public Lever site(s). Lever confirms these listings are public "
+            "and active, but does not expose their original posting dates."
+        )
+        provider = LeverJobProvider(configured_lever_sites)
+        discover_label = "Discover live jobs now"
+        spinner_label = "Loading configured Lever posting sites..."
+    elif source == "Live Ashby boards":
+        st.success(
+            f"Live discovery is configured for {len(configured_ashby_boards)} "
+            "public Ashby board(s). These are active company career listings "
+            "filtered through your saved preferences."
+        )
+        provider = AshbyJobProvider(configured_ashby_boards)
+        discover_label = "Discover live jobs now"
+        spinner_label = "Loading configured Ashby job boards..."
+    elif source == "Early-career web sources":
+        st.success(
+            "Early-career web sources are enabled through no-key public job "
+            f"APIs. {PRODUCT_NAME} searches remote and public tech feeds, then "
+            "applies your saved role, skill, experience, location, and "
+            "freshness filters before ranking."
+        )
+        provider = EarlyCareerWebJobProvider()
+        discover_label = "Search early-career web sources"
+        spinner_label = "Searching early-career web job sources..."
+    elif source == "Broad Adzuna search":
+        st.success(
+            f"Broad search is enabled through Adzuna. {PRODUCT_NAME} searches each "
+            "saved target role, then applies the same experience, location, "
+            "freshness, and title filters used for company feeds."
+        )
+        provider = AdzunaJobProvider(
+            adzuna_app_id,
+            adzuna_app_key,
+            country=adzuna_country,
+        )
+        discover_label = "Search broad job market"
+        spinner_label = "Searching Adzuna for target roles..."
+    elif source == "Broad Jooble search":
+        st.success(
+            f"Broad search is enabled through Jooble. {PRODUCT_NAME} searches "
+            "bounded role and location combinations, then applies the same "
+            "title, experience, and preference filters used for every source."
+        )
+        provider = JoobleJobProvider(
+            jooble_api_key,
+            country=jooble_country,
+        )
+        discover_label = "Search broad job market"
+        spinner_label = "Searching Jooble for target roles..."
+    elif source == "Google Jobs search":
+        st.success(
+            f"Google Jobs search is enabled through SerpAPI. {PRODUCT_NAME} "
+            "queries role and location combinations, then normalizes postings "
+            "from major platforms and company pages into the same ranking "
+            "pipeline."
+        )
+        provider = SerpApiGoogleJobsProvider(serpapi_api_key)
+        discover_label = "Search Google Jobs"
+        spinner_label = "Searching Google Jobs for target roles..."
+    elif source == "All live sources":
+        st.success(
+            "Live discovery will combine every configured provider, "
+            "deduplicate the results, and isolate source failures."
+        )
+        live_providers = []
+        if configured_boards:
+            live_providers.append(GreenhouseJobProvider(configured_boards))
+        if configured_lever_sites:
+            live_providers.append(LeverJobProvider(configured_lever_sites))
+        if configured_ashby_boards:
+            live_providers.append(AshbyJobProvider(configured_ashby_boards))
+        if early_career_sources_configured:
+            live_providers.append(EarlyCareerWebJobProvider())
+        if adzuna_configured:
+            live_providers.append(
+                AdzunaJobProvider(
+                    adzuna_app_id,
+                    adzuna_app_key,
+                    country=adzuna_country,
+                )
+            )
+        if jooble_configured:
+            live_providers.append(
+                JoobleJobProvider(
+                    jooble_api_key,
+                    country=jooble_country,
+                )
+            )
+        if serpapi_configured:
+            live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
+        provider = CombinedJobProvider(live_providers)
+        discover_label = "Discover from all live sources"
+        spinner_label = "Loading configured live job sources..."
+    else:  # Developer-only sample catalog.
+        st.info(
+            "Developer sample mode is enabled. These vacancies validate the "
+            "workflow and are not active external job postings."
+        )
+        if greenhouse_configuration_error:
+            st.warning(greenhouse_configuration_error)
+        if lever_configuration_error:
+            st.warning(lever_configuration_error)
+        if ashby_configuration_error:
+            st.warning(ashby_configuration_error)
+        provider = LocalSampleJobProvider()
+        discover_label = "Discover sample jobs now"
+        spinner_label = "Filtering the local sample catalog..."
+
+    if (
+        source in {"Broad Adzuna search", "All live sources"}
+        and adzuna_configured
+    ):
+        st.caption(
+            "Broad-market listings are provided by "
+            "[Adzuna](https://www.adzuna.co.in/)."
+        )
+    if (
+        source in {"Broad Jooble search", "All live sources"}
+        and jooble_configured
+    ):
+        st.caption(
+            "Additional broad-market listings are provided by "
+            "[Jooble](https://jooble.org/)."
+        )
+    if (
+        source in {"Early-career web sources", "All live sources"}
+        and early_career_sources_configured
+    ):
+        st.caption(
+            "Early-career web coverage includes public no-key feeds from "
+            "[Remotive](https://remotive.com/) and "
+            "[Arbeitnow](https://www.arbeitnow.com/), plus tagged remote-tech "
+            "listings from [RemoteOK](https://remoteok.com/)."
+        )
+    if (
+        source in {"Google Jobs search", "All live sources"}
+        and serpapi_configured
+    ):
+        st.caption(
+            "Google Jobs results are provided through "
+            "[SerpAPI](https://serpapi.com/google-jobs-api) and may include "
+            "listings from LinkedIn, Naukri, Indeed, and company career pages "
+            "when Google exposes them for the query."
+        )
+    if source == "All live sources" and not serpapi_configured:
+        st.info(
+            "High-coverage Google Jobs search is not configured yet. Add "
+            "SERPAPI_API_KEY to enable discovery from Google Jobs results, "
+            "including listings Google exposes from LinkedIn, Naukri, Indeed, "
+            "and company career pages."
+        )
+    stats = job_store_stats()
+    source_database_fresh = False
+    if stats["total"]:
+        latest = stats.get("latest") or "not available"
+        st.caption(
+            f"Local job database: {stats['total']} normalized listing(s). "
+            f"Last refresh: {latest} UTC."
+        )
+        try:
+            latest_refresh = datetime.fromisoformat(stats["latest"])
+            age_seconds = (datetime.utcnow() - latest_refresh).total_seconds()
+            source_database_fresh = (
+                age_seconds < JOB_STORE_REFRESH_TTL_MINUTES * 60
+            )
+        except (TypeError, ValueError):
+            source_database_fresh = False
+    refresh_sources = False
+    if source != "Sample catalog":
+        refresh_sources = st.checkbox(
+            "Refresh source database before search",
+            value=not source_database_fresh,
+            help=(
+                "Turn this on when you want to call the live providers again. "
+                "Leave it off to rank the local normalized job database "
+                "quickly."
+            ),
+        )
+
+    discover_col, clear_col = st.columns([2, 1])
+    with discover_col:
+        discover_clicked = st.button(
+            discover_label,
+            type="primary",
+            use_container_width=True,
+        )
+    with clear_col:
+        if st.button(
+            "Clear job inbox",
+            use_container_width=True,
+        ):
+            clear_discovery_results()
+            st.rerun()
+
+    if discover_clicked:
+        try:
+            with st.spinner(spinner_label):
+                if source == "Sample catalog":
+                    stored_count = 0
+                    jobs, rejections = discover_jobs(preferences, provider)
+                else:
+                    stored_count = None
+                    if refresh_sources or not stats["total"]:
+                        stored_count = ingest_provider_jobs(
+                            provider,
+                            preferences,
+                        )
+                    jobs, rejections = discover_jobs(
+                        preferences,
+                        StoredJobProvider(
+                            seen_within_days=discovery_inventory_window_days(
+                                preferences
+                            )
+                        ),
+                    )
+        except (JobDiscoveryError, ValueError) as exc:
+            st.error(str(exc))
+            return
+        st.session_state.discovered_jobs = jobs
+        st.session_state.discovery_rejections = rejections
+        st.session_state.discovery_preferences_snapshot = {
+            "preferences": preferences.to_dict(),
+            "source": source,
+            "quality_policy": DISCOVERY_QUALITY_POLICY_VERSION,
+        }
+        st.session_state.job_inbox_status = {
+            job.provider_job_id: "New" for job in jobs
+        }
+        provider_failures = list(getattr(provider, "failures", []))
+        if provider_failures:
+            affected_sources = sorted(
+                {
+                    failure.split(":", 1)[0].split(" / ", 1)[0].strip()
+                    for failure in provider_failures
+                    if str(failure).strip()
+                }
+            )
+            rate_limited_count = sum(
+                "429" in failure or "rate" in failure.lower()
+                for failure in provider_failures
+            )
+            unreachable_count = sum(
+                "could not be reached" in failure.lower()
+                for failure in provider_failures
+            )
+            details = []
+            if rate_limited_count:
+                details.append(f"{rate_limited_count} rate-limited request(s)")
+            if unreachable_count:
+                details.append(f"{unreachable_count} unreachable feed(s)")
+            other_count = max(
+                0,
+                len(provider_failures) - rate_limited_count - unreachable_count,
+            )
+            if other_count:
+                details.append(f"{other_count} other provider issue(s)")
+            st.warning(
+                f"Some live sources could not be refreshed. {PRODUCT_NAME} ranked "
+                "the available local job database instead"
+                + (f" ({', '.join(details)})." if details else ".")
+            )
+            if affected_sources:
+                visible_sources = ", ".join(affected_sources[:4])
+                overflow = len(affected_sources) - 4
+                st.caption(
+                    "Affected source/query groups: "
+                    + visible_sources
+                    + (f", +{overflow} more" if overflow > 0 else "")
+                    + "."
+                )
+            with st.expander(
+                f"Source refresh details ({len(provider_failures)})",
+                expanded=False,
+            ):
+                for failure in provider_failures:
+                    st.caption(failure)
+        if source != "Sample catalog" and stored_count is not None:
+            st.caption(
+                f"Refreshed {stored_count} normalized listing(s) into the "
+                "local job database before ranking this search."
+            )
+        elif source != "Sample catalog":
+            st.caption(
+                "Ranked from the local normalized job database. Enable "
+                "refresh above when you want to fetch new provider data."
+            )
+        if jobs:
+            message = (
+                f"Found {len(jobs)} matching job(s). "
+                f"Filtered {len(rejections)} result(s)."
+            )
+            if len(jobs) >= TARGET_DISCOVERY_RESULTS:
+                st.success(message)
+            else:
+                st.warning(
+                    message
+                    + f" The current sources did not reach the "
+                    f"{TARGET_DISCOVERY_RESULTS}-job coverage target."
+                )
+        else:
+            st.warning(
+                "No jobs matched these preferences. Broaden one or "
+                "more filters and try again."
+            )
+
+    results_are_current = (
+        st.session_state.discovery_preferences_snapshot
+        == {
+            "preferences": preferences.to_dict(),
+            "source": source,
+            "quality_policy": DISCOVERY_QUALITY_POLICY_VERSION,
+        }
+    )
+    jobs = st.session_state.discovered_jobs if results_are_current else []
+    rejections = (
+        st.session_state.discovery_rejections if results_are_current else []
+    )
+    if rejections:
+        source_rejection_counts = Counter(
+            (
+                rejection.split(" · ", 1)[0]
+                if " · " in rejection
+                else "Unknown source"
+            )
+            for rejection in rejections
+        )
+        reason_counts = Counter(
+            (
+                rejection.split(": ", 1)[1]
+                if ": " in rejection
+                else rejection
+            )
+            for rejection in rejections
+        )
+        with st.expander(f"Why {len(rejections)} jobs were filtered"):
+            st.caption(
+                f"{PRODUCT_NAME} removes jobs that conflict with your saved "
+                "preferences before showing the inbox."
+            )
+            for reason, count in reason_counts.most_common(6):
+                st.write(f"**{count}** · {reason}")
+            if source_rejection_counts:
+                st.caption(
+                    "Filtered by source: "
+                    + " · ".join(
+                        f"{source} {count}"
+                        for source, count in source_rejection_counts.most_common()
+                    )
+                )
+            if len(reason_counts) > 6:
+                st.caption(
+                    f"{len(reason_counts) - 6} less common reason(s) are not "
+                    "shown."
+                )
+    if not jobs:
+        return
+
+    render_section_label("Job inbox")
+    verified_count = sum(
+        experience_confidence(job) == "Verified selected level" for job in jobs
+    )
+    likely_count = sum(
+        experience_confidence(job) == "Likely entry-level" for job in jobs
+    )
+    unstated_count = sum(
+        experience_confidence(job) == "Experience not stated" for job in jobs
+    )
+    recommended_jobs = [
+        job for job in jobs if is_recommended_discovery_job(job)
+    ]
+    recommended_count = min(
+        len(recommended_jobs),
+        RECOMMENDED_DISCOVERY_LIMIT,
+    )
+    source_counts = Counter(job.source.split(" · ", 1)[0] for job in jobs)
+    direct_source_count = sum(
+        1 for job in jobs if is_direct_company_source(job.source)
+    )
+    broad_source_count = sum(
+        1 for job in jobs if is_broad_market_source(job.source)
+    )
+    title_col, recommended_col, count_col, verified_col = st.columns(
+        [2, 1, 1, 1]
+    )
+    with title_col:
+        st.subheader("Discovered opportunities")
+    with recommended_col:
+        st.metric("Recommended", recommended_count)
+    with count_col:
+        st.metric("Total found", len(jobs))
+    with verified_col:
+        st.metric("Verified level", verified_count)
+    st.caption(
+        "Source coverage: "
+        + " · ".join(
+            f"{provider} {count}"
+            for provider, count in source_counts.most_common()
+        )
+    )
+    if direct_source_count < min(TARGET_DISCOVERY_RESULTS, len(jobs)):
+        st.info(
+            f"{direct_source_count} result(s) came directly from company "
+            "career feeds. The remaining jobs are broad-market listings and "
+            "should be opened before preparing an application."
+        )
+    if len(jobs) >= TARGET_DISCOVERY_RESULTS:
+        selected_locations = [
+            location.lower() for location in preferences.locations
+        ]
+        expanded_count = sum(
+            not any(
+                selected in job.location.lower()
+                or job.location.lower() in selected
+                for selected in selected_locations
+            )
+            for job in jobs
+        )
+        if expanded_count:
+            st.caption(
+                f"{expanded_count} result(s) are India-market coverage "
+                "expansions because exact-location matches were below the "
+                f"{TARGET_DISCOVERY_RESULTS}-job target."
+            )
+    if len(source_counts) == 1 and "Adzuna" in source_counts:
+        st.warning(
+            "No configured company career feed produced a matching role for "
+            "this search. These results come from Adzuna; open the original "
+            "listing before preparing an application."
+        )
+    st.caption(
+        "Open the original listing to verify details. Prepare Application "
+        "loads only the selected job into your private application workspace; "
+        "it never submits an application automatically."
+    )
+    status_filter = st.segmented_control(
+        "Inbox view",
+        ["All", "New", "Shortlisted", "Prepared", "Ignored"],
+        default="All",
+        key="discovery_status_filter",
+    )
+    experience_options = ["Recommended", "Verified only", "All results"]
+    experience_view = st.segmented_control(
+        "Experience confidence",
+        experience_options,
+        default="Recommended",
+        key="discovery_experience_filter_v4",
+        help=(
+            "Recommended shows verified and likely early-career roles. "
+            "Verified only shows roles that explicitly mention internship, "
+            "fresher, graduate, or 0-2 years. All results includes broad "
+            "search matches whose experience level must be checked manually."
+        ),
+    )
+    st.caption(
+        f"{recommended_count} top recommended result(s). "
+        f"{broad_source_count} "
+        "broad-market result(s) need source verification before applying."
+    )
+    filtered_jobs = [
+        job
+        for job in jobs
+        if (
+            status_filter == "All"
+            or st.session_state.job_inbox_status.get(
+                job.provider_job_id,
+                "New",
+            )
+            == status_filter
+        )
+        and (
+            experience_view == "All results"
+            or (
+                experience_view == "Recommended"
+                and is_recommended_discovery_job(job)
+            )
+            or (
+                experience_view == "Verified only"
+                and experience_confidence(job) == "Verified selected level"
+            )
+        )
+    ]
+    visible_jobs = (
+        filtered_jobs[:RECOMMENDED_DISCOVERY_LIMIT]
+        if experience_view == "Recommended"
+        else filtered_jobs
+    )
+    if not visible_jobs:
+        st.markdown(
+            '<div class="empty-state">No jobs match this inbox view.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    for job in visible_jobs:
+        status = st.session_state.job_inbox_status.get(
+            job.provider_job_id,
+            "New",
+        )
+        with st.expander(
+            f"{job.relevance_score}/100 · {job.job_title} · {job.company_name}",
+            expanded=False,
+        ):
+            st.markdown(
+                f'<span class="status-pill">{escape(status)}</span>',
+                unsafe_allow_html=True,
+            )
+            date_text = (
+                f"{job.date_label} "
+                f"{job.posted_date.strftime('%d %b %Y')}"
+                if job.freshness_verified
+                else f"{job.date_label} · date unavailable"
+            )
+            metadata = [
+                f"Relevance {job.relevance_score}/100",
+                experience_confidence(job),
+                date_text,
+                job.work_mode,
+                job.location,
+                job.job_type,
+                job.source,
+            ]
+            st.caption(
+                " · ".join(item for item in metadata if str(item).strip())
+            )
+            description = " ".join(job.job_description.split())
+            preview = (
+                description
+                if len(description) <= 700
+                else description[:697].rsplit(" ", 1)[0] + "..."
+            )
+            st.write(preview)
+            if len(description) > len(preview):
+                st.caption(
+                    "Preview shortened for readability. View the original "
+                    "listing for complete responsibilities and requirements."
+                )
+
+            prepare_col, view_col, apply_col = st.columns([2, 1, 1])
+            with prepare_col:
+                st.button(
+                    "Prepare Application",
+                    key=f"review_discovered_{job.provider_job_id}",
+                    type="primary",
+                    use_container_width=True,
+                    on_click=queue_discovered_job,
+                    args=(job,),
+                )
+            with view_col:
+                if job.source_url:
+                    st.link_button(
+                        "View Job",
+                        job.source_url,
+                        use_container_width=True,
+                    )
+            with apply_col:
+                if job.apply_url:
+                    st.link_button(
+                        "Apply on Company Site",
+                        job.apply_url,
+                        use_container_width=True,
+                    )
+
+            shortlist_col, ignore_col, _ = st.columns([1, 1, 2])
+            with shortlist_col:
+                st.button(
+                    "Shortlist",
+                    key=f"shortlist_discovered_{job.provider_job_id}",
+                    use_container_width=True,
+                    on_click=update_inbox_status,
+                    args=(job.provider_job_id, "Shortlisted"),
+                )
+            with ignore_col:
+                st.button(
+                    "Ignore",
+                    key=f"ignore_discovered_{job.provider_job_id}",
+                    use_container_width=True,
+                    on_click=update_inbox_status,
+                    args=(job.provider_job_id, "Ignored"),
+                )
+
+
 def render_fit(match: dict):
     score = int(match.get("match_score", 0))
     verdict = match.get("fit_verdict_label", "Fit scored")
+    recommendation = match.get("application_recommendation", "")
     color = verdict_color(verdict)
     st.markdown(
         f"""
@@ -954,6 +1963,8 @@ def render_fit(match: dict):
         """,
         unsafe_allow_html=True,
     )
+    if recommendation:
+        st.caption(f"Suggested action: {recommendation}")
     guidance = match.get("fit_guidance", "")
     if guidance:
         notice_class = "warning" if score < 65 else ""
@@ -961,7 +1972,7 @@ def render_fit(match: dict):
             f'<div class="notice {notice_class}">{guidance}</div>',
             unsafe_allow_html=True,
         )
-    confirmed_terms = match.get("user_confirmed_terms", [])
+    confirmed_terms = list(match.get("user_confirmed_terms", []))[:8]
     if confirmed_terms:
         st.caption(
             "Fit remains based on permanent profile evidence. "
@@ -1036,6 +2047,11 @@ def render_workspace():
         "Application Workspace",
         "Build one evidence-based application from job input to reviewed documents.",
     )
+    if st.session_state.loaded_job_notice:
+        st.success(
+            st.session_state.loaded_job_notice
+            + ". Review the details below, then select Analyze fit."
+        )
     active_step = 1
     if st.session_state.base_match:
         active_step = 2
@@ -1094,6 +2110,7 @@ def render_workspace():
                     st.session_state.job_title = fetched.job_title
                     st.session_state.job_description = fetched.job_description
                     st.session_state.source_url = fetched.source_url
+                    st.session_state.application_apply_url = fetched.source_url
                     st.session_state.fetch_error = ""
                     st.session_state.fetch_error_url = ""
                     st.session_state.job_form_revision += 1
@@ -1103,6 +2120,7 @@ def render_workspace():
                     LOGGER.exception("Job fetching failed", exc_info=exc)
                     invalidate_application_results()
                     st.session_state.source_url = str(entered_url).strip()
+                    st.session_state.application_apply_url = str(entered_url).strip()
                     st.session_state.fetch_error = user_facing_error(
                         exc,
                         "Job fetching",
@@ -1190,6 +2208,8 @@ def render_workspace():
             st.session_state.job_title = role
             st.session_state.job_description = job_description
             st.session_state.source_url = source_url
+            if not st.session_state.application_apply_url:
+                st.session_state.application_apply_url = source_url
             st.session_state.analyzed_description_fingerprint = (
                 description_fingerprint(job_description)
             )
@@ -1281,7 +2301,7 @@ def render_workspace():
                     job_title=role,
                     job_description=job_description,
                     tone=tone,
-                    source_url=source_url,
+                    source_url=tracker_apply_url(source_url),
                     confirmed_terms=confirmed,
                     job_analysis=st.session_state.job_analysis,
                     profile=st.session_state.base_profile,
@@ -1388,6 +2408,7 @@ def render_job_ranking():
                     candidate_urls,
                     active_profile(),
                     progress_callback=update_progress,
+                    preferences=st.session_state.job_preferences,
                 )
                 listing_failures = [
                     f"{url} -> Search/listing page; use an individual job URL"
@@ -1519,8 +2540,8 @@ def render_draft(draft):
         unsafe_allow_html=True,
     )
 
-    resume_tab, letter_tab, ats_tab = st.tabs(
-        ["Resume", "Cover letter", "ATS report"]
+    resume_tab, letter_tab, prep_tab, ats_tab = st.tabs(
+        ["Resume", "Cover letter", "Prep pack", "ATS report"]
     )
     resume_text = resume_to_text(draft.resume)
     with resume_tab:
@@ -1552,6 +2573,31 @@ def render_draft(draft):
             file_name="cover_letter.txt",
             mime="text/plain",
             use_container_width=True,
+        )
+    with prep_tab:
+        st.caption(
+            "Use this before applying or messaging a recruiter. It is generated "
+            "from the fit analysis and verified profile evidence."
+        )
+        st.text_area(
+            "Recruiter message",
+            draft.recruiter_message,
+            height=180,
+            disabled=True,
+        )
+        st.download_button(
+            "Download recruiter message",
+            draft.recruiter_message,
+            file_name="recruiter_message.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+        st.markdown("**Match explanation**")
+        st.write(draft.match_explanation)
+        render_list_panel(
+            "Application checklist",
+            draft.application_checklist,
+            "positive",
         )
     with ats_tab:
         coverage = draft.ats_report["keyword_coverage"]
@@ -1983,17 +3029,24 @@ def render_ranking_history():
 def main():
     apply_styles()
     init_state()
+    apply_pending_discovered_job()
 
     with st.sidebar:
-        st.markdown("## ApplySmart AI")
-        st.caption("Your application command center")
+        st.markdown(f"## {PRODUCT_NAME}")
+        st.caption(PRODUCT_TAGLINE)
         st.markdown(
             '<span class="status-pill positive">Local workspace</span>',
             unsafe_allow_html=True,
         )
         page = st.radio(
             "Navigation",
-            ["Application", "Job Ranking", "Profile", "Tracker"],
+            [
+                "Application",
+                "Job Discovery",
+                "Job Ranking",
+                "Profile",
+                "Tracker",
+            ],
             key="navigation",
             label_visibility="collapsed",
         )
@@ -2003,6 +3056,8 @@ def main():
 
     if page == "Application":
         render_workspace()
+    elif page == "Job Discovery":
+        render_job_discovery()
     elif page == "Job Ranking":
         render_job_ranking()
     elif page == "Profile":

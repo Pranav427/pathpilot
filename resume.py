@@ -3,7 +3,23 @@
 import os
 import re
 import subprocess
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(path: str = ".env") -> None:
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
 from analyzer import analyze_job
 from profile import get_profile
 from matcher import match_profile_to_job
@@ -16,8 +32,11 @@ from utils import (
 )
 
 load_dotenv()
-client = get_llm_client()
-MODEL = get_llm_model()
+
+
+def llm_runtime():
+    """Returns the configured LLM client and model when generation is requested."""
+    return get_llm_client(), get_llm_model()
 
 
 def clean_resume_style(text: str) -> str:
@@ -37,6 +56,13 @@ def clean_resume_style(text: str) -> str:
         "passionate": "interested",
         "recent computer science graduate": "Computer Science graduate",
         "recent B.Tech graduate": "B.Tech graduate",
+        "completed multiple data science internships": (
+            "completed data science training and practical ML projects"
+        ),
+        "multiple data science internships": (
+            "data science training and practical ML projects"
+        ),
+        "structured internships": "structured training",
         "transforming": "building",
         "revolutionizing": "improving",
         "leveraging": "using",
@@ -162,7 +188,7 @@ def grounded_professional_summary(profile: dict) -> str:
         "Computer Science graduate with foundations in software engineering, "
         "artificial intelligence, machine learning, data analysis, and core "
         "computer science concepts. Skilled in Python, SQL, Java, and C++ "
-        "through verified academic projects, structured internships, and "
+        "through verified academic projects, structured training, and "
         "technical coursework."
         + project_evidence
     )
@@ -228,6 +254,8 @@ Return this exact JSON structure:
 
 STRICT RULES:
 - Do NOT invent companies, jobs, or work experience
+- Do NOT claim multiple internships unless they appear in verified Experience
+- Prefer "training and projects" over "internships" when experience is training-based
 - Use ONLY facts from the candidate profile
 - Include only skills the candidate actually has; do not invent any
 - User-confirmed familiarity may appear only in the Skills section
@@ -248,9 +276,10 @@ STRICT RULES:
 - If the role is not ML, data science, AI, analytics, or computer vision, keep those metrics inside the project bullets only.
 """
 
+    client, model = llm_runtime()
     result = create_json_with_retry(
         client,
-        model=MODEL,
+        model=model,
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
         required_keys=[

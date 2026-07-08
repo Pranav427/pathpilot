@@ -13,6 +13,42 @@ ATS_NOISE_TERMS = {
     "sde",
     "equal opportunity employer",
     "fast paced environment",
+    "john doe",
+    "johndoe",
+}
+
+ATS_CONTEXT_ONLY_TERMS = {
+    "6 months",
+    "analytical mindset",
+    "artificial intelligence",
+    "aerospace",
+    "b tech",
+    "b.tech",
+    "bachelor s degree",
+    "bachelor's degree",
+    "computer science",
+    "data engineering",
+    "data science",
+    "digital engineering",
+    "full time internship",
+    "full-time internship",
+    "innovation centre",
+    "innovation center",
+    "mathematics",
+    "ml applications",
+    "m.eng",
+    "m.eng.",
+    "m.sc",
+    "m.sc.",
+    "meng",
+    "msc",
+    "permanent",
+    "production grade",
+    "production-grade",
+    "professional",
+    "remote",
+    "verbal communication",
+    "written communication",
 }
 
 
@@ -54,18 +90,45 @@ def _resume_text(resume_text) -> str:
     return "\n".join(lines)
 
 
+def _is_context_only_term(term: str) -> bool:
+    normalized = normalize(term)
+    compact = normalized.replace(".", "")
+    return normalized in ATS_CONTEXT_ONLY_TERMS or compact in ATS_CONTEXT_ONLY_TERMS
+
+
+def _is_redundant_missing_term(term: str, covered_terms: list[str]) -> bool:
+    normalized_term = normalize(term)
+    if not normalized_term:
+        return False
+
+    for covered in covered_terms:
+        normalized_covered = normalize(covered)
+        if normalized_covered and normalized_covered in normalized_term:
+            return True
+    return False
+
+
 def build_ats_report(resume_text, job_analysis: dict) -> dict:
     resume_text = _resume_text(resume_text)
-    priority_terms = (
-        list(job_analysis.get("skills", []))
-        + list(job_analysis.get("tools", []))
-    )
+    priority_terms = []
     context_terms = []
     excluded_terms = []
+    for term in (
+        list(job_analysis.get("skills", []))
+        + list(job_analysis.get("tools", []))
+    ):
+        normalized = normalize(term)
+        if normalized in ATS_NOISE_TERMS:
+            excluded_terms.append(term)
+        else:
+            priority_terms.append(term)
+
     for term in job_analysis.get("keywords", []):
         normalized = normalize(term)
         if normalized in ATS_NOISE_TERMS:
             excluded_terms.append(term)
+        elif _is_context_only_term(term):
+            context_terms.append(term)
         elif re.search(
             r"\b(?:bachelor|master|phd|degree|\d+\s*\+?\s*(?:years?|yrs?))\b",
             normalized,
@@ -85,7 +148,15 @@ def build_ats_report(resume_text, job_analysis: dict) -> dict:
 
     candidate_terms = _candidate_terms_from_text(resume_text)
     covered = [term for term in unique_terms if has_term(candidate_terms, term)]
-    missing = [term for term in unique_terms if term not in covered]
+    priority_keys = {normalize(term) for term in priority_terms}
+    missing = [
+        term for term in unique_terms
+        if (
+            normalize(term) in priority_keys
+            and term not in covered
+            and not _is_redundant_missing_term(term, covered)
+        )
+    ]
     coverage = round((len(covered) / len(unique_terms)) * 100) if unique_terms else 0
 
     checks = {

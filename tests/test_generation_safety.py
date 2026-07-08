@@ -1,6 +1,11 @@
 from unittest.mock import patch
 
-from application_service import generate_application_draft
+from application_service import (
+    build_application_checklist,
+    build_match_explanation,
+    build_recruiter_message,
+    generate_application_draft,
+)
 from cover_letter import (
     cover_letter_body_paragraphs,
     enforce_cover_letter_constraints,
@@ -69,6 +74,15 @@ def test_resume_summary_removes_recent_graduate_label():
     )
 
 
+def test_resume_style_replaces_unverified_multiple_internships():
+    cleaned = clean_resume_style(
+        "Completed multiple data science internships and built ML models."
+    )
+
+    assert "multiple data science internships" not in cleaned.lower()
+    assert "data science training" in cleaned
+
+
 def test_cross_project_metrics_are_detected():
     text = (
         "My Medical Condition Classification project processed 15,000 drug "
@@ -132,6 +146,25 @@ def test_cover_letter_constraints_fix_status_and_word_limit():
     assert len(" ".join(paragraphs).split()) <= 220
     assert "student" not in constrained.lower()
     assert "graduate" in constrained.lower()
+
+
+def test_cover_letter_constraints_fix_undergraduate_status():
+    profile = get_profile()
+    text = (
+        "Dear Hiring Team,\n\n"
+        "As a final year Computer Science undergraduate with Python experience, "
+        "I am interested in this role.\n\n"
+        "My project work includes machine learning model evaluation and "
+        "data preprocessing.\n\n"
+        "I would welcome the opportunity to discuss the role.\n\n"
+        "Sincerely,\nObili Pranav"
+    )
+
+    constrained = enforce_cover_letter_constraints(text, profile)
+
+    assert "undergraduate" not in constrained.lower()
+    assert "final year" not in constrained.lower()
+    assert "Computer Science graduate" in constrained
 
 
 def test_application_service_sanitizes_generated_documents_end_to_end():
@@ -199,3 +232,39 @@ def test_application_service_sanitizes_generated_documents_end_to_end():
     assert "Imaginary Tool" not in str(draft.resume)
     assert "Invented Certificate" not in draft.resume["certifications"]
     assert draft.resume["projects"][0]["tools"] == profile["projects"][0]["tools"]
+
+
+def test_application_prep_pack_is_grounded_in_match_context():
+    profile = {
+        "name": "Obili Pranav",
+        "skills": {},
+    }
+    match = {
+        "match_score": 82,
+        "fit_verdict_label": "Strong Match",
+        "matched_skills": ["Python", "Machine Learning"],
+        "matched_tools": ["SQL"],
+        "missing_skills": ["TensorFlow"],
+        "missing_tools": [],
+        "strongest_points": ["Project evidence shows Python model building."],
+    }
+    ats_report = {
+        "keyword_coverage": 65,
+        "missing_terms": ["deep learning"],
+    }
+
+    message = build_recruiter_message(
+        profile=profile,
+        company_name="Example AI",
+        job_title="Data Scientist Intern",
+        match=match,
+    )
+    explanation = build_match_explanation(match)
+    checklist = build_application_checklist(match, ats_report)
+
+    assert "Data Scientist Intern" in message
+    assert "Python" in message
+    assert "Strong Match" in explanation
+    assert "82/100" in explanation
+    assert any("TensorFlow" in item for item in checklist)
+    assert any("ATS coverage" in item for item in checklist)

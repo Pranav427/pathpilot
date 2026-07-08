@@ -1,8 +1,10 @@
-# ApplySmart AI
+# PathPilot
 
-ApplySmart AI is an AI Career Copilot prototype that helps job seekers analyze jobs, measure profile fit, generate tailored application materials, check ATS coverage, and track application drafts.
+PathPilot is an intelligent career platform that helps job seekers discover relevant opportunities, analyze fit, generate evidence-backed application materials, prepare outreach, check ATS coverage, and track application progress.
 
-The long-term objective is not to build a simple resume generator. The objective is to build a career intelligence platform that finds relevant jobs, ranks them by fit, generates optimized applications, tracks outcomes, and improves interview chances over time.
+Navigate your career with intelligence.
+
+The long-term objective is not to build a simple resume generator. The objective is to build a trustworthy career intelligence platform that finds relevant jobs, ranks them by fit, generates optimized applications, tracks outcomes, prepares candidates for interviews, and improves career decisions over time.
 
 ## Current Status
 
@@ -17,6 +19,14 @@ Implemented:
 
 - Candidate master profile
 - Session-isolated tester profiles for local and controlled usability testing
+- Session-based job preferences covering target roles, locations, experience,
+  work mode, job type, preferred skills, exclusions, and freshness
+- Evidence-backed role and skill suggestions derived from the active candidate
+  profile, while locations and final preferences remain user-confirmed
+- Provider-neutral discovery pipeline with default live Greenhouse, Lever, and
+  Ashby company feeds, optional Adzuna and Jooble broad-market APIs, a
+  developer-only sample catalog, deterministic filtering, cross-source
+  deduplication, failure isolation, stale-result invalidation, and a job inbox
 - Manual job description input
 - Public job URL fetching
 - Search/listing-page preflight that prevents misleading fit scores
@@ -50,10 +60,11 @@ Implemented:
 - User-safe Streamlit error messages with technical details retained in logs
 - Classified AI-provider failures that stop retrying permanent authentication,
   quota, permission, and model errors
+- Multi-source job discovery across curated Greenhouse, Lever, and Ashby
+  company feeds plus optional Adzuna and Jooble broad-market APIs
 
 Not yet implemented:
 
-- Broad job-board discovery beyond user-provided URLs
 - Multi-user SaaS backend
 - Outcome analytics
 - Auto-apply workflow
@@ -83,11 +94,13 @@ Track Draft
 ## Project Structure
 
 ```text
-SmartApply/
+PathPilot/
 ├── app.py                    Streamlit application
 ├── main.py                   CLI application
 ├── application_service.py    Reusable application workflow
 ├── profile.py                Structured candidate profile
+├── job_preferences.py        Discovery preferences and validation
+├── job_discovery.py          Provider contract, filtering, and sample catalog
 ├── job_fetcher.py            Public job-page extraction
 ├── job_search.py             Multi-URL ranking backend
 ├── analyzer.py               Job-description analysis
@@ -116,13 +129,13 @@ Requirements:
 - Python 3.11 recommended
 - An Anthropic API key by default, or a Gemini API key when using Gemini
 - Optional `pdflatex` for the preferred resume and cover-letter layout. When it
-  is unavailable, ApplySmart uses its bundled Python PDF fallback.
+  is unavailable, PathPilot uses its bundled Python PDF fallback.
 
 Clone the repository and create a virtual environment:
 
 ```bash
 git clone <your-repository-url>
-cd SmartApply
+cd PathPilot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -139,6 +152,101 @@ Create local configuration from the safe template:
 ```bash
 cp .env.example .env
 ```
+
+Normal Job Discovery uses a curated set of public Greenhouse, Lever, and
+Ashby company feeds without provider API keys. The default pack now includes a
+broader set of India-present technology companies, but these direct feeds are
+still not a complete job market. For narrow fresher data/AI searches,
+broad-market or licensed partner search is still required to consistently
+reach the 10-job coverage target. Custom Greenhouse boards can replace the
+curated Greenhouse defaults through `.env`:
+
+```env
+GREENHOUSE_BOARDS=companytoken|Company Name,anotherboard|Another Company
+```
+
+This connector does not require a Greenhouse API key. It searches only the
+companies explicitly configured by the app owner; it is not a global job-board
+search. Greenhouse provides an update timestamp rather than a guaranteed
+original publication date. Its feed contains currently published jobs, so
+PathPilot labels those records as **Active listing · date unavailable** and
+does not reject a role merely because its content was not recently edited.
+PathPilot keeps only the top 50 matching results per discovery run.
+
+Custom Lever sites can replace the curated Lever defaults by company site name:
+
+```env
+LEVER_SITES=companysite|Company Name|global,eucompany|EU Company|eu
+```
+
+Lever does not require an API key for published public postings. Its public
+feed does not provide a reliable original posting date, so PathPilot labels
+those records as **Active listing · date unavailable** and does not claim they
+were posted inside the user's freshness window.
+
+Custom Ashby boards can be added by public job-board name:
+
+```env
+ASHBY_BOARDS=companyboard|Company Name,anotherboard|Another Company
+```
+
+Ashby public postings are active company-career listings. PathPilot labels
+them as **Active listing · date unavailable** unless the provider exposes a
+reliable posting date.
+
+When multiple providers are configured, **All live sources** combines and
+deduplicates their results. Direct company feeds are ranked ahead of broad
+aggregator feeds when relevance and experience confidence are otherwise close.
+
+LinkedIn, Indeed, and Naukri are not scraped by discovery. They do not expose
+an unrestricted public job-search API suitable for this workflow, and their
+pages commonly block automated extraction. Jobs from those platforms can be
+reviewed through a user-supplied public detail URL or manual job-description
+paste. Broader automated coverage must use an approved API or licensed data
+partner rather than fragile browser scraping.
+
+Each live result exposes **View Job** for verification and **Apply on Company
+Site** when the provider publishes a direct application URL. **Prepare
+Application** transfers only that selected job into PathPilot's application
+workspace. Discovery never applies automatically.
+
+For broader market coverage, register an Adzuna API application and configure:
+
+```env
+ADZUNA_APP_ID=your_app_id
+ADZUNA_APP_KEY=your_app_key
+ADZUNA_COUNTRY=in
+```
+
+PathPilot performs one bounded query per target role, combines those results
+with configured company feeds, and then applies the same deterministic
+freshness, location, title, and experience filters. Adzuna usage is subject to
+its API limits, attribution requirements, and commercial licensing terms.
+Successful broad searches are cached briefly to protect provider quotas.
+
+For a second broad-market source, configure Jooble:
+
+```env
+JOOBLE_API_KEY=your_api_key
+JOOBLE_COUNTRY=in
+```
+
+Jooble is queried with bounded role/location combinations, then passed through
+the same title, location, experience, and exclusion filters as all other
+providers. This improves coverage when Adzuna or direct company feeds are thin,
+but every listing should still be opened and verified before preparing an
+application.
+
+The fictional sample catalog is hidden from normal users. Developers may
+enable it explicitly for offline workflow testing:
+
+```env
+APPLYSMART_ENABLE_SAMPLE_JOBS=true
+```
+
+The `APPLYSMART_*` environment variable prefix is retained for compatibility
+during the PathPilot rebrand. Product-facing UI and documentation now use
+PathPilot.
 
 Edit `.env`, choose `LLM_PROVIDER=gemini` or `LLM_PROVIDER=anthropic`, and
 provide the corresponding API key plus candidate contact details. Claude
@@ -215,7 +323,7 @@ application until its documents are reviewed, approved, and saved.
 
 ## Fit Verdicts
 
-ApplySmart AI uses a transparent scoring layer and produces verdicts:
+PathPilot uses a transparent scoring layer and produces verdicts:
 
 ```text
 Strong Match

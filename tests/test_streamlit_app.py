@@ -3,6 +3,7 @@ from streamlit.testing.v1 import AppTest
 from app import (
     description_fingerprint,
     document_download_name,
+    preferred_tracker_apply_url,
     user_facing_error,
 )
 from llm_utils import LLMServiceError
@@ -16,6 +17,10 @@ def test_streamlit_primary_pages_and_short_jd_validation():
     app.sidebar.radio[0].set_value("Profile").run()
     assert not app.exception
     assert app.title[0].value == "Candidate Profile"
+
+    app.sidebar.radio[0].set_value("Job Discovery").run()
+    assert not app.exception
+    assert app.title[0].value == "Job Discovery"
 
     app.sidebar.radio[0].set_value("Job Ranking").run()
     assert not app.exception
@@ -47,6 +52,77 @@ def test_streamlit_reset_does_not_mutate_instantiated_widget():
     assert not app.exception
     assert app.segmented_control[0].value == "Paste description"
     assert app.text_area[0].value == ""
+
+
+def test_discovered_job_opens_in_application_workspace(monkeypatch):
+    monkeypatch.setenv("APPLYSMART_ENABLE_SAMPLE_JOBS", "true")
+    app = AppTest.from_file("app.py", default_timeout=10).run()
+    app.sidebar.radio[0].set_value("Job Discovery").run()
+
+    app.text_area[1].set_value("Bengaluru, Hyderabad, Remote")
+    next(
+        button
+        for button in app.button
+        if button.label == "Save job preferences"
+    ).click().run()
+    next(
+        control
+        for control in app.segmented_control
+        if control.key == "discovery_source_control"
+    ).set_value("Sample catalog").run()
+    next(
+        button
+        for button in app.button
+        if button.label == "Discover sample jobs now"
+    ).click().run()
+    next(
+        button
+        for button in app.button
+        if button.label == "Prepare Application"
+    ).click().run()
+
+    assert not app.exception
+    assert app.title[0].value == "Application Workspace"
+    assert app.text_input[0].value in {
+        "Northstar Analytics",
+        "Civic Data Labs",
+        "Orbit AI Studio",
+    }
+    assert app.text_input[1].value
+    assert len(app.text_area[0].value.split()) >= 50
+    assert any(
+        "Loaded from Job Discovery" in message.value
+        for message in app.success
+    )
+
+
+def test_tracker_apply_url_prefers_direct_apply_link_from_discovery():
+    google_jobs_url = "https://www.google.com/search?ibp=htl;jobs&q=AI/ML"
+    direct_apply_url = "https://bebee.com/in/jobs/ai-ml-engineer-intern"
+
+    assert (
+        preferred_tracker_apply_url(
+            current_source_url=google_jobs_url,
+            stored_source_url=google_jobs_url,
+            direct_apply_url=direct_apply_url,
+        )
+        == direct_apply_url
+    )
+
+
+def test_tracker_apply_url_respects_manually_edited_url():
+    google_jobs_url = "https://www.google.com/search?ibp=htl;jobs&q=AI/ML"
+    direct_apply_url = "https://bebee.com/in/jobs/ai-ml-engineer-intern"
+    edited_url = "https://company.example/careers/job"
+
+    assert (
+        preferred_tracker_apply_url(
+            current_source_url=edited_url,
+            stored_source_url=google_jobs_url,
+            direct_apply_url=direct_apply_url,
+        )
+        == edited_url
+    )
 
 
 def test_streamlit_multi_job_batch_limit():

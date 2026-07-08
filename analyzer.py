@@ -1,11 +1,30 @@
-from dotenv import load_dotenv
+import os
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(path: str = ".env") -> None:
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
 from llm_utils import create_json_with_retry, get_llm_client, get_llm_model
 
 # Load API key
 load_dotenv()
 
-client = get_llm_client()
-MODEL = get_llm_model()
+
+def llm_runtime():
+    """Returns the configured LLM client and model when analysis is requested."""
+    return get_llm_client(), get_llm_model()
 
 
 def normalize_analysis_result(result: dict) -> dict:
@@ -69,9 +88,10 @@ Rules:
 - Only include what is actually in the job description
 """
 
+    client, model = llm_runtime()
     result = create_json_with_retry(
         client,
-        model=MODEL,
+        model=model,
         max_tokens=1000,
         messages=[
             {

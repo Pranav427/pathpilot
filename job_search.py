@@ -5,6 +5,7 @@ from datetime import datetime
 
 from analyzer import analyze_job
 from job_fetcher import FetchedJob, fetch_job_from_url
+from job_preferences import JobPreferences, preference_rejection_reason
 from matcher import match_profile_to_job
 from tracker import record_job_search_run
 
@@ -88,6 +89,7 @@ def rank_jobs_from_urls(
     urls: list[str],
     profile: dict,
     progress_callback=None,
+    preferences: JobPreferences | None = None,
 ) -> tuple[list[RankedJob], list[str]]:
     """
     Fetches, analyzes, matches, and ranks multiple job URLs.
@@ -114,6 +116,14 @@ def rank_jobs_from_urls(
                 "✅ Fetched: "
                 f"{fetched_job.company_name} | {fetched_job.job_title}"
             )
+
+            rejection = preference_rejection_reason(
+                job_title=fetched_job.job_title,
+                job_description=fetched_job.job_description,
+                preferences=preferences,
+            )
+            if rejection:
+                raise ValueError(rejection)
 
             print("📊 Analyzing job description...")
             job_analysis = analyze_job(fetched_job.job_description)
@@ -213,7 +223,7 @@ def display_ranked_jobs(ranked_jobs: list[RankedJob], failures: list[str] = None
 def ranked_jobs_report(ranked_jobs: list[RankedJob], failures: list[str] = None) -> str:
     """Builds a plain-text report of ranked jobs."""
     lines = [
-        "APPLYSMART AI - RANKED JOB REPORT",
+        "PATHPILOT - RANKED JOB REPORT",
         "=" * 70,
         f"Generated At: {datetime.now().isoformat(timespec='seconds')}",
         "",

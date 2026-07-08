@@ -33,7 +33,7 @@ class LLMServiceError(RuntimeError):
 
 
 def classify_llm_error(exc: Exception) -> LLMServiceError:
-    """Maps provider-specific failures to stable ApplySmart error categories."""
+    """Maps provider-specific failures to stable PathPilot error categories."""
     if isinstance(exc, LLMServiceError):
         return exc
 
@@ -164,7 +164,7 @@ class _GeminiMessages:
             config={
                 "max_output_tokens": max_tokens,
                 "response_mime_type": response_mime_type,
-                # ApplySmart needs concise, visible structured output rather
+                # PathPilot needs concise, visible structured output rather
                 # than spending the token budget on model reasoning.
                 "thinking_config": {"thinking_budget": 0},
             },
@@ -173,7 +173,7 @@ class _GeminiMessages:
 
 
 class GeminiClientAdapter:
-    """Exposes Gemini through the message interface used by ApplySmart."""
+    """Exposes Gemini through the message interface used by PathPilot."""
 
     provider = "gemini"
 
@@ -221,7 +221,7 @@ def validate_llm_configuration(client=None) -> None:
         raise RuntimeError(
             f"{provider.title()} API key is not configured. Copy .env.example "
             f"to .env, set {settings['api_key_env']} to a valid key, and "
-            "restart ApplySmart AI."
+            "restart PathPilot."
         )
 
 
@@ -232,7 +232,7 @@ def validate_anthropic_configuration() -> None:
     if not api_key or api_key == settings["placeholder"]:
         raise RuntimeError(
             "Anthropic API key is not configured. Copy .env.example to .env, "
-            "set ANTHROPIC_API_KEY to a valid key, and restart ApplySmart AI."
+            "set ANTHROPIC_API_KEY to a valid key, and restart PathPilot."
         )
 
 

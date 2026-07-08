@@ -1,8 +1,8 @@
-# ApplySmart AI System Design Documentation
+# PathPilot System Design Documentation
 
 ## 1. Executive Summary
 
-ApplySmart AI is an AI-powered Career Intelligence Platform that helps job seekers increase interview opportunities by improving every major step of the job search process: job discovery, job selection, job fit analysis, resume tailoring, cover letter generation, ATS optimization, application tracking, and career analytics.
+PathPilot is an AI-powered Career Intelligence Platform that helps job seekers increase interview opportunities by improving every major step of the job search process: job discovery, job selection, job fit analysis, resume tailoring, cover letter generation, ATS optimization, application tracking, interview preparation, and career analytics.
 
 The product is not intended to be a simple resume generator. Its purpose is to become an AI Career Copilot that helps users decide which jobs are worth applying to, how to position themselves, what gaps they need to close, and which application strategies produce the best outcomes.
 
@@ -12,7 +12,7 @@ The primary input is a candidate profile. The primary output is more interview o
 
 Job seekers face a fragmented, inefficient, and low-feedback job search process. Jobs are spread across LinkedIn, Naukri, Indeed, company career pages, referrals, and niche platforms. Many listings are irrelevant, duplicated, expired, or unrealistic for the candidate's profile. Candidates often apply with generic resumes, fail ATS keyword screening, do not know which roles are worth prioritizing, and rarely track outcomes in a structured way.
 
-ApplySmart AI solves this by turning job search into a data-driven workflow. It can analyze jobs, compare them with a candidate's profile, rank opportunities, generate tailored materials, track application status, and later learn which roles and resume strategies produce interviews.
+PathPilot solves this by turning job search into a data-driven workflow. It can analyze jobs, compare them with a candidate's profile, rank opportunities, generate tailored materials, track application status, and later learn which roles and resume strategies produce interviews.
 
 ## 3. Project Goals
 
@@ -135,6 +135,33 @@ testers can use their own evidence without modifying the repository profile.
 
 `job_search.py`: accepts multiple public job URLs, fetches each job, analyzes each JD, calculates fit, ranks jobs, labels each job as Recommended/Review Carefully/Skip, saves a ranking report, records the ranking session in SQLite, and returns shortlisted jobs for document generation. Input: list of URLs and profile. Output: ranked jobs, persisted search run, and selected shortlisted jobs.
 
+`job_preferences.py`: validates session-based discovery intent including target
+roles, locations, experience levels, work modes, job types, preferred skills,
+excluded keywords, and freshness. It also derives conservative role and skill
+suggestions from verified profile evidence. Explicit exclusions can filter
+supplied jobs without changing the evidence-based fit score.
+
+`job_discovery.py`: defines the provider-neutral discovered-job contract,
+deterministic freshness/preference filtering, deduplication, discovery
+relevance, default curated connectors for public Greenhouse boards and Lever
+posting sites, and a developer-only local sample provider.
+Sample results are labeled and never represented as active vacancies. Live
+Greenhouse jobs retain their public apply URL and source identity. Changing
+confirmed preferences or the selected provider invalidates prior discovery
+results so stale matches and rejection reasons are never presented as current.
+The connector labels Greenhouse timestamps as updated dates, because the public
+API does not guarantee an original posting timestamp, and caps each normalized
+inbox at the top 50 matching records.
+Lever records are sourced only from its published public Postings API. Because
+that feed does not expose a reliable original publication date, the system
+labels them as active with date unavailable and does not manufacture freshness.
+The combined provider isolates individual source failures and runs shared
+cross-source deduplication before filtering and ranking.
+Normal discovery defaults to a small vetted catalog of India-relevant public
+company feeds and supports environment-based overrides. The fictional sample
+catalog is available only behind an explicit developer flag, preventing test
+vacancies from being mistaken for live opportunities.
+
 `analyzer.py`: analyzes raw job descriptions using AI. Input: job description text. Output: skills, tools, keywords, summary. Dependencies: the provider-neutral client in `llm_utils.py`.
 
 `matcher.py`: compares job analysis against candidate profile. Input: job analysis and profile. Output: matches, gaps, score, recommendation. Dependencies: `scoring.py`, AI JSON utility. The deterministic score is the source of truth, and AI recommendation wording is sanitized to avoid conflicting percentages.
@@ -253,7 +280,9 @@ Future Learning Engine: recommends role strategy, resume improvements, and skill
 
 Jobs can be gathered from manual JD paste, job URL fetching, job search APIs, company career pages, RSS feeds, email alerts, or curated job boards.
 
-The engine should normalize all jobs into a common schema: title, company, location, work mode, source URL, raw JD, extracted requirements, and metadata.
+The engine normalizes provider results from company ATS feeds and broad licensed search APIs into a common schema: title, company, location, work mode, source URL, direct apply URL, raw JD, extracted requirements, and metadata.
+
+The user remains in control of the handoff. **View Job** verifies the original listing, **Apply on Company Site** opens the provider's direct application page, and **Prepare Application** transfers only the selected job into the document workflow. No discovery result is submitted automatically.
 
 Filtering should include role, seniority, location, remote/hybrid/on-site, salary, company type, required skills, and eligibility.
 
@@ -348,7 +377,7 @@ AI resume tools: generate documents, but often lack discovery, fit scoring, trac
 
 Career platforms: broad guidance, but not end-to-end AI application workflow.
 
-Differentiator: ApplySmart AI combines job discovery, fit ranking, tailored application generation, ATS checks, tracking, and learning.
+Differentiator: PathPilot combines job discovery, fit ranking, tailored application generation, ATS checks, tracking, preparation, automation, and learning.
 
 ## 20. Risk Analysis
 
@@ -397,7 +426,7 @@ Next priority: validate the multi-job workspace against varied public job pages 
 
 ## 23. Final CTO Review
 
-Brutally honest assessment: ApplySmart AI is a promising prototype with the right product direction, but it is not yet a full Career Copilot. It currently proves the application-generation engine, not the full job-discovery and career-intelligence platform.
+Brutally honest assessment: PathPilot is a promising prototype with the right product direction, but it is not yet a full Career Intelligence Platform. It currently proves the discovery-to-application workflow, not the full long-term career-intelligence platform.
 
 Top opportunities:
 

@@ -61,9 +61,19 @@ def normalize_candidate_status(text: str, profile: dict) -> str:
     replacements = (
         (r"\bfinal[- ]year B\.?Tech student\b", "B.Tech graduate"),
         (
+            r"\bfinal[- ]year Computer Science undergraduate\b",
+            "Computer Science graduate",
+        ),
+        (
             r"\bfinal[- ]year Computer Science student\b",
             "Computer Science graduate",
         ),
+        (
+            r"\bfinal[- ]year\b.{0,40}\bundergraduate\b",
+            "Computer Science graduate",
+        ),
+        (r"\bComputer Science undergraduate\b", "Computer Science graduate"),
+        (r"\bB\.?Tech undergraduate\b", "B.Tech graduate"),
         (r"\bB\.?Tech CS student\b", "B.Tech CS graduate"),
         (
             r"\bComputer Science engineering student\b",

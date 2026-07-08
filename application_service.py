@@ -1,8 +1,8 @@
-"""Reusable ApplySmart application workflow for CLI and future UI clients."""
+"""Reusable PathPilot application workflow for CLI and future UI clients."""
 
 import os
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import uuid4
 
 from analyzer import analyze_job
@@ -50,6 +50,9 @@ class ApplicationDraft:
     resume: dict
     cover_letter: str
     ats_report: dict
+    recruiter_message: str = ""
+    application_checklist: list[str] = field(default_factory=list)
+    match_explanation: str = ""
 
 
 @dataclass
@@ -158,7 +161,7 @@ def add_confirmed_skills_to_profile(profile: dict, skills: list[str]) -> dict:
     return enriched_profile
 
 
-def get_missing_profile_terms(match: dict, limit: int = 12) -> list[str]:
+def get_missing_profile_terms(match: dict, limit: int = 8) -> list[str]:
     """Returns deduplicated gaps suitable for user confirmation."""
     terms = unique_items(
         list(match.get("missing_skills", []))
@@ -173,7 +176,7 @@ def attach_confirmed_familiarity(
 ) -> dict:
     """Annotates a match without treating familiarity as verified evidence."""
     annotated = deepcopy(match)
-    terms = unique_items(confirmed_terms)
+    terms = unique_items(confirmed_terms)[:8]
     annotated["base_match_score"] = int(match.get("match_score", 0))
     annotated["familiarity_adjustment"] = 0
     annotated["user_confirmed_terms"] = terms
@@ -231,6 +234,86 @@ def build_final_resume_text(resume: dict, profile: dict) -> str:
     return "\n".join(str(line) for line in lines if line)
 
 
+def build_match_explanation(match: dict) -> str:
+    """Creates a concise, grounded explanation of application fit."""
+    score = int(match.get("match_score", 0))
+    verdict = str(match.get("fit_verdict_label") or "Fit scored")
+    recommendation = str(match.get("application_recommendation") or "").strip()
+    strongest = unique_items(list(match.get("strongest_points", [])))[:2]
+    gaps = unique_items(
+        list(match.get("missing_skills", []))
+        + list(match.get("missing_tools", []))
+    )[:4]
+
+    lines = [f"{verdict}: profile fit is {score}/100."]
+    if recommendation:
+        lines.append(f"Suggested action: {recommendation}.")
+    if strongest:
+        lines.append("Best evidence: " + " ".join(strongest))
+    if gaps:
+        lines.append("Check before applying: " + ", ".join(gaps) + ".")
+    else:
+        lines.append("No major missing skill/tool gaps were detected.")
+    return " ".join(lines)
+
+
+def build_recruiter_message(
+    *,
+    profile: dict,
+    company_name: str,
+    job_title: str,
+    match: dict,
+) -> str:
+    """Creates a short outreach note from verified profile and match evidence."""
+    name = str(profile.get("name") or "Pranav").strip()
+    matched = unique_items(
+        list(match.get("matched_skills", []))
+        + list(match.get("matched_tools", []))
+    )[:3]
+    evidence = unique_items(list(match.get("strongest_points", [])))[:1]
+    skill_line = (
+        " with experience in " + ", ".join(matched)
+        if matched
+        else ""
+    )
+    evidence_line = f" {evidence[0]}" if evidence else ""
+    return (
+        f"Hi, I am {name}. I am interested in the {job_title} role at "
+        f"{company_name}{skill_line}.{evidence_line} I would appreciate the "
+        "opportunity to be considered and can share tailored application "
+        "materials or project details if helpful."
+    )
+
+
+def build_application_checklist(match: dict, ats_report: dict) -> list[str]:
+    """Returns review actions to complete before applying."""
+    checklist = [
+        "Open the original listing and confirm the role is still active.",
+        "Verify company name, job title, location, work mode, and job type.",
+        "Review every resume and cover-letter claim for factual accuracy.",
+        "Confirm contact details and public profile links are current.",
+    ]
+    missing = unique_items(
+        list(match.get("missing_skills", []))
+        + list(match.get("missing_tools", []))
+        + list(ats_report.get("missing_terms", []))
+    )
+    if missing:
+        checklist.append(
+            "Prepare honest talking points for gaps: "
+            + ", ".join(missing[:5])
+            + "."
+        )
+    if int(ats_report.get("keyword_coverage", 0)) < 70:
+        checklist.append(
+            "Improve ATS coverage only with skills and evidence you can verify."
+        )
+    checklist.append(
+        "After submitting externally, update Tracker status to Applied."
+    )
+    return checklist
+
+
 def generate_application_draft(
     company_name: str,
     job_title: str,
@@ -256,6 +339,7 @@ def generate_application_draft(
 
     confirmed_terms = unique_items(confirmed_terms or [])
     if confirmed_terms:
+        confirmed_terms = confirmed_terms[:8]
         profile = add_confirmed_skills_to_profile(profile, confirmed_terms)
         match = attach_confirmed_familiarity(match, confirmed_terms)
 
@@ -272,6 +356,14 @@ def generate_application_draft(
         build_final_resume_text(resume, profile),
         job_analysis,
     )
+    recruiter_message = build_recruiter_message(
+        profile=profile,
+        company_name=company_name,
+        job_title=job_title,
+        match=match,
+    )
+    application_checklist = build_application_checklist(match, ats_report)
+    match_explanation = build_match_explanation(match)
 
     return ApplicationDraft(
         company_name=company_name,
@@ -283,6 +375,9 @@ def generate_application_draft(
         resume=resume,
         cover_letter=cover_letter,
         ats_report=ats_report,
+        recruiter_message=recruiter_message,
+        application_checklist=application_checklist,
+        match_explanation=match_explanation,
     )
 
 
@@ -317,7 +412,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
     try:
         styles = getSampleStyleSheet()
         body_style = ParagraphStyle(
-            "ApplySmartBody",
+            "PathPilotBody",
             parent=styles["BodyText"],
             fontName="Helvetica",
             fontSize=9.5,
@@ -325,7 +420,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             spaceAfter=4,
         )
         heading_style = ParagraphStyle(
-            "ApplySmartHeading",
+            "PathPilotHeading",
             parent=styles["Heading2"],
             fontName="Helvetica-Bold",
             fontSize=11,
@@ -334,7 +429,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             spaceAfter=4,
         )
         name_style = ParagraphStyle(
-            "ApplySmartName",
+            "PathPilotName",
             parent=styles["Title"],
             fontName="Helvetica-Bold",
             fontSize=16,
@@ -350,7 +445,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             leftMargin=16 * mm,
             topMargin=14 * mm,
             bottomMargin=14 * mm,
-            title="ApplySmart AI application document",
+            title="PathPilot application document",
         )
         story = []
         first_content_line = True

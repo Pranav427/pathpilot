@@ -290,6 +290,25 @@ def fit_guidance(score: int, missing_skills: list[str], missing_tools: list[str]
     )
 
 
+def application_recommendation(
+    score: int,
+    missing_skills: list[str],
+    missing_tools: list[str],
+    seniority_penalty_value: int = 0,
+) -> str:
+    """Returns a short action label separate from the fit verdict."""
+    core_gap_count = len(missing_skills) + len(missing_tools)
+    if score >= 80 and core_gap_count <= 6 and seniority_penalty_value == 0:
+        return "Prioritize"
+    if score >= 65 and core_gap_count <= 12:
+        return "Apply"
+    if score >= 45 and core_gap_count <= 25:
+        return "Apply with honest positioning"
+    if score >= 45:
+        return "Practice or low-priority apply"
+    return "Skip for now"
+
+
 def seniority_penalty(job_analysis: dict) -> tuple[int, str]:
     """Returns a conservative penalty for explicit experienced-hire requirements."""
     searchable = " ".join(
@@ -360,6 +379,12 @@ def calculate_fit_score(job_analysis: dict, profile: dict) -> dict:
         "match_score": final_score,
         "fit_verdict": fit_verdict(final_score),
         "fit_verdict_label": fit_verdict_label(final_score),
+        "application_recommendation": application_recommendation(
+            final_score,
+            missing_skills,
+            missing_tools,
+            experience_penalty,
+        ),
         "fit_guidance": fit_guidance(final_score, missing_skills, missing_tools),
         "score_components": {
             "skills": skill_score,
