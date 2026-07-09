@@ -789,6 +789,49 @@ def display_resume(resume_text):
     print("="*55)
 
 
+def optimize_resume_bullet(bullet: str) -> dict:
+    """Uses LLM to generate 3 high-impact, metrics-driven professional bullet points based on a draft bullet, 
+    with structural placeholders and clarifying questions to avoid metrics fabrication.
+    """
+    if not bullet.strip():
+        return {"suggestions": [], "clarifying_questions": []}
+    
+    prompt = f"""You are a senior professional resume writer and career coach.
+Review the following draft resume bullet point or experience description:
+"{bullet}"
+
+Task:
+1. Generate exactly 3 optimized, high-impact, action-oriented bullet points for a professional resume.
+2. Under no circumstances should you fabricate or invent specific numbers, percentages, team sizes, dollar amounts, or business results.
+3. If you want to show how a metric fits into the bullet structure, you MUST use brackets/placeholders like "[X]%" or "[number]".
+   For example: "Optimized backend API response time by [X]% by implementing Redis caching."
+4. Generate 2-3 target clarifying questions that will help the candidate recall their actual achievements or metrics for this specific bullet (e.g. "How many daily active users supported?", "What was the estimated decrease in database load?").
+
+Respond ONLY with a JSON object containing keys "suggestions" and "clarifying_questions". E.g.:
+{{
+  "suggestions": [
+    "bullet suggestion 1 with placeholders",
+    "bullet suggestion 2 with placeholders",
+    "bullet suggestion 3 with placeholders"
+  ],
+  "clarifying_questions": [
+    "Clarifying question 1",
+    "Clarifying question 2"
+  ]
+}}
+"""
+    client, model = llm_runtime()
+    result = create_json_with_retry(
+        client,
+        model=model,
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+        required_keys=["suggestions", "clarifying_questions"],
+        source="Bullet optimization",
+    )
+    return result
+
+
 if __name__ == "__main__":
 
     sample_job = """

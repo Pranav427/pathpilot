@@ -18,13 +18,9 @@ def test_streamlit_primary_pages_and_short_jd_validation():
     assert not app.exception
     assert app.title[0].value == "Candidate Profile"
 
-    app.sidebar.radio[0].set_value("Job Discovery").run()
+    app.sidebar.radio[0].set_value("Opportunities").run()
     assert not app.exception
-    assert app.title[0].value == "Job Discovery"
-
-    app.sidebar.radio[0].set_value("Job Ranking").run()
-    assert not app.exception
-    assert app.title[0].value == "Job Ranking"
+    assert app.title[0].value == "Opportunities Hub"
 
     app.sidebar.radio[0].set_value("Tracker").run()
     assert not app.exception
@@ -57,7 +53,7 @@ def test_streamlit_reset_does_not_mutate_instantiated_widget():
 def test_discovered_job_opens_in_application_workspace(monkeypatch):
     monkeypatch.setenv("APPLYSMART_ENABLE_SAMPLE_JOBS", "true")
     app = AppTest.from_file("app.py", default_timeout=10).run()
-    app.sidebar.radio[0].set_value("Job Discovery").run()
+    app.sidebar.radio[0].set_value("Opportunities").run()
 
     next(t for t in app.text_area if t.label == "Locations *").set_value("Bengaluru, Hyderabad, Remote")
     next(
@@ -91,7 +87,7 @@ def test_discovered_job_opens_in_application_workspace(monkeypatch):
     assert app.text_input[1].value
     assert len(app.text_area[0].value.split()) >= 50
     assert any(
-        "Loaded from Job Discovery" in message.value
+        "Loaded from Opportunities" in message.value
         for message in app.success
     )
 
@@ -127,14 +123,14 @@ def test_tracker_apply_url_respects_manually_edited_url():
 
 def test_streamlit_multi_job_batch_limit():
     app = AppTest.from_file("app.py", default_timeout=10).run()
-    app.sidebar.radio[0].set_value("Job Ranking").run()
+    app.sidebar.radio[0].set_value("Opportunities").run()
 
     urls = "\n".join(
         f"https://example.com/openings/engineer-{index}"
         for index in range(1, 12)
     )
-    app.text_area[0].set_value(urls)
-    app.button[0].click().run()
+    next(t for t in app.text_area if t.label == "Job URLs").set_value(urls)
+    next(b for b in app.button if b.label == "Analyze and rank jobs").click().run()
 
     assert not app.exception
     assert "10 or fewer" in app.error[0].value
@@ -142,11 +138,11 @@ def test_streamlit_multi_job_batch_limit():
 
 def test_streamlit_rejects_search_pages_before_ranking():
     app = AppTest.from_file("app.py", default_timeout=10).run()
-    app.sidebar.radio[0].set_value("Job Ranking").run()
-    app.text_area[0].set_value(
+    app.sidebar.radio[0].set_value("Opportunities").run()
+    next(t for t in app.text_area if t.label == "Job URLs").set_value(
         "https://www.linkedin.com/jobs/search/?keywords=Data%20Scientist"
     )
-    app.button[0].click().run()
+    next(b for b in app.button if b.label == "Analyze and rank jobs").click().run()
 
     assert not app.exception
     assert "No individual job-detail URLs" in app.error[0].value

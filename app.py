@@ -92,6 +92,7 @@ from job_preferences import (
     WORK_MODES,
     build_job_preferences,
     suggest_job_preferences,
+    JobPreferences,
 )
 from job_store import (
     StoredJobProvider,
@@ -101,7 +102,7 @@ from job_store import (
 from llm_utils import LLMServiceError
 from profile import build_session_profile, copy_profile, get_profile, get_blank_profile
 from quality import audit_application_documents
-from resume import resume_to_text
+from resume import resume_to_text, optimize_resume_bullet
 from tracker import (
     VALID_STATUSES,
     get_stats,
@@ -116,6 +117,7 @@ from tracker import (
     save_user_profile,
     list_user_profiles,
     delete_user_profile,
+    seed_demo_data,
 )
 from utils import clean_filename
 
@@ -595,6 +597,58 @@ def apply_styles():
     )
 
 
+def is_profile_complete() -> bool:
+    """Returns True if the user has completed their profile onboarding."""
+    prof = active_profile()
+    return bool(prof and prof.get("name"))
+
+
+def check_profile_prerequisite() -> bool:
+    """Verifies that the user has completed their profile onboarding.
+    If not, displays a friendly redirection message and returns False.
+    """
+    if not is_profile_complete() and not is_demo_mode():
+        st.markdown(
+            """
+            <div class="empty-state">
+                <h3>👤 Profile Setup Required</h3>
+                <p>To analyze matches, discover jobs, or generate custom application materials, we first need to understand your background.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Complete Profile Onboarding ➔", type="primary", use_container_width=True):
+            st.session_state.navigation = "Profile"
+            st.rerun()
+        return False
+    return True
+
+
+def render_progress_header(current_step: int):
+    """Renders a progress tracker bar at the top of the main pages."""
+    steps = [
+        "1. Profile Setup",
+        "2. Opportunities Sourcing",
+        "3. Application Workspace",
+        "4. Status Tracker"
+    ]
+    
+    html = '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; background: var(--bg-card); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); font-size: 0.9rem;">'
+    for idx, step in enumerate(steps, 1):
+        if idx == current_step:
+            color = "color: #2563EB; font-weight: bold; border-bottom: 2px solid #2563EB; padding-bottom: 2px;"
+        elif idx < current_step:
+            color = "color: #10B981; font-weight: 500;"
+        else:
+            color = "color: #9CA3AF;"
+            
+        separator = " ➔ " if idx < len(steps) else ""
+        html += f'<span style="{color}">{step}</span>{separator}'
+        
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_page_header(title: str, subtitle: str):
     """Renders a consistent page title and supporting description."""
     st.title(title)
@@ -642,6 +696,11 @@ def render_list_panel(title: str, items: list, tone: str = ""):
         f'<div class="detail-list">{list_html}</div></div>',
         unsafe_allow_html=True,
     )
+
+
+def is_demo_mode() -> bool:
+    """Returns True if the current user is logged in to the public demo/guest account."""
+    return st.session_state.get("current_user_email") == "demo@pathpilot.ai"
 
 
 def make_session_token(user_id: int) -> str:
@@ -699,6 +758,22 @@ def init_state():
     if not session_profile:
         session_profile = copy_profile(get_profile())
         
+    job_preferences = None
+    pref_dict = session_profile.get("job_preferences")
+    if pref_dict and isinstance(pref_dict, dict):
+        try:
+            valid_keys = {
+                "target_roles", "locations", "experience_levels",
+                "work_modes", "job_types", "preferred_skills",
+                "excluded_keywords", "maximum_job_age_days"
+            }
+            filtered = {k: v for k, v in pref_dict.items() if k in valid_keys}
+            job_preferences = JobPreferences(**filtered)
+        except Exception:
+            pass
+    elif pref_dict and isinstance(pref_dict, JobPreferences):
+        job_preferences = pref_dict
+        
     defaults = {
         "current_user_id": current_user_id,
         "current_user_email": current_user_email,
@@ -726,8 +801,8 @@ def init_state():
         "history_load_error": "",
         "profile_mode": "Demo profile",
         "profile_saved": False,
-        "job_preferences": None,
-        "preferences_saved": False,
+        "job_preferences": job_preferences,
+        "preferences_saved": job_preferences is not None,
         "discovered_jobs": [],
         "discovery_rejections": [],
         "job_inbox_status": {},
@@ -901,7 +976,7 @@ def apply_pending_discovered_job():
     st.session_state.application_apply_url = job.apply_url or job.source_url
     st.session_state.input_method = "Paste description"
     st.session_state.loaded_job_notice = (
-        f"Loaded from Job Discovery: {job.company_name} · {job.job_title}"
+        f"Loaded from Opportunities: {job.company_name} · {job.job_title}"
     )
     st.session_state.navigation = "Application"
 
@@ -1687,6 +1762,9 @@ def render_profile():
             with col1:
                 if st.button("Complete Setup 🚀", type="primary", use_container_width=True):
                     # Save profile and preferences
+                    raw_prefs = st.session_state.get("job_preferences")
+                    if raw_prefs:
+                        temp["job_preferences"] = raw_prefs.to_dict() if hasattr(raw_prefs, "to_dict") else raw_prefs
                     st.session_state.session_profile = temp
                     save_user_profile(st.session_state.current_user_id, temp, st.session_state.current_persona_name)
                     st.session_state.preferences_saved = True
@@ -1829,6 +1907,44 @@ def render_profile():
                 e_highlights_str = st.text_area("Highlights / Responsibilities (one per line)", value=highlights_str, key=f"prof_exp_high_{i}")
                 e_highlights = [line.strip() for line in e_highlights_str.split("\n") if line.strip()]
                 
+                # Bullet Optimizer Block
+                opt_col1, opt_col2 = st.columns([1, 2])
+                with opt_col1:
+                    opt_clicked = st.button("✨ Optimize bullets", key=f"prof_exp_opt_btn_{i}", help="Use AI to rewrite highlights with professional metrics", use_container_width=True)
+                if opt_clicked:
+                    if not highlights_str.strip():
+                        st.warning("Please type some highlights first.")
+                    else:
+                        with st.spinner("Optimizing..."):
+                            try:
+                                res_dict = optimize_resume_bullet(highlights_str)
+                                if res_dict:
+                                    st.session_state[f"prof_exp_opt_suggestions_{i}"] = res_dict.get("suggestions", [])
+                                    st.session_state[f"prof_exp_opt_questions_{i}"] = res_dict.get("clarifying_questions", [])
+                            except Exception as exc:
+                                st.error(f"Failed to optimize: {exc}")
+                            
+                suggs = st.session_state.get(f"prof_exp_opt_suggestions_{i}")
+                questions = st.session_state.get(f"prof_exp_opt_questions_{i}")
+                if suggs:
+                    st.markdown("##### 💡 AI Suggestions (Click Apply to use):")
+                    for s_idx, sug in enumerate(suggs):
+                        col_text, col_apply = st.columns([4, 1])
+                        with col_text:
+                            st.info(sug)
+                        with col_apply:
+                            if st.button("Apply", key=f"prof_exp_opt_apply_{i}_{s_idx}", use_container_width=True):
+                                current["experience"][i]["highlights"] = [sug]
+                                st.session_state.session_profile = current
+                                save_user_profile(st.session_state.current_user_id, current, st.session_state.current_persona_name)
+                                st.session_state.pop(f"prof_exp_opt_suggestions_{i}", None)
+                                st.session_state.pop(f"prof_exp_opt_questions_{i}", None)
+                                st.rerun()
+                if questions:
+                    st.markdown("**💡 Custom Prompt Helpers (Answer these in your highlights to add real metrics):**")
+                    for q in questions:
+                        st.write(f"- *{q}*")
+                
                 if st.button(f"🗑️ Remove Job #{i+1}", key=f"prof_exp_remove_{i}", use_container_width=True):
                     exp_data.pop(i)
                     current["experience"] = exp_data
@@ -1869,6 +1985,44 @@ def render_profile():
                 p_tools = [t.strip() for t in p_tools_str.split(",") if t.strip()]
                 
                 p_desc = st.text_area("Project Description", value=proj.get("description", ""), key=f"prof_proj_desc_{i}")
+                
+                # Bullet Optimizer Block
+                p_opt_col1, p_opt_col2 = st.columns([1, 2])
+                with p_opt_col1:
+                    p_opt_clicked = st.button("✨ Optimize description", key=f"prof_proj_opt_btn_{i}", help="Use AI to rewrite project description with professional metrics", use_container_width=True)
+                if p_opt_clicked:
+                    if not p_desc.strip():
+                        st.warning("Please type a description first.")
+                    else:
+                        with st.spinner("Optimizing..."):
+                            try:
+                                res_dict = optimize_resume_bullet(p_desc)
+                                if res_dict:
+                                    st.session_state[f"prof_proj_opt_suggestions_{i}"] = res_dict.get("suggestions", [])
+                                    st.session_state[f"prof_proj_opt_questions_{i}"] = res_dict.get("clarifying_questions", [])
+                            except Exception as exc:
+                                st.error(f"Failed to optimize: {exc}")
+                            
+                p_suggs = st.session_state.get(f"prof_proj_opt_suggestions_{i}")
+                p_questions = st.session_state.get(f"prof_proj_opt_questions_{i}")
+                if p_suggs:
+                    st.markdown("##### 💡 AI Suggestions (Click Apply to use):")
+                    for s_idx, sug in enumerate(p_suggs):
+                        col_text, col_apply = st.columns([4, 1])
+                        with col_text:
+                            st.info(sug)
+                        with col_apply:
+                            if st.button("Apply", key=f"prof_proj_opt_apply_{i}_{s_idx}", use_container_width=True):
+                                current["projects"][i]["description"] = sug
+                                st.session_state.session_profile = current
+                                save_user_profile(st.session_state.current_user_id, current, st.session_state.current_persona_name)
+                                st.session_state.pop(f"prof_proj_opt_suggestions_{i}", None)
+                                st.session_state.pop(f"prof_proj_opt_questions_{i}", None)
+                                st.rerun()
+                if p_questions:
+                    st.markdown("**💡 Custom Prompt Helpers (Answer these in your description to add real metrics):**")
+                    for q in p_questions:
+                        st.write(f"- *{q}*")
                 
                 if st.button(f"🗑️ Remove Project #{i+1}", key=f"prof_proj_remove_{i}", use_container_width=True):
                     proj_data.pop(i)
@@ -2096,12 +2250,8 @@ def render_profile():
             st.write(f"- {certification}")
 
 
-def render_job_discovery():
+def render_job_discovery_content():
     """Collects validated search intent before source discovery is enabled."""
-    render_page_header(
-        "Job Discovery",
-        f"Set the roles and constraints {PRODUCT_NAME} should use for job discovery.",
-    )
     preferences = st.session_state.job_preferences
     profile_suggestions = suggest_job_preferences(active_profile())
     current = preferences.to_dict() if preferences else profile_suggestions
@@ -2207,6 +2357,10 @@ def render_job_discovery():
                 clear_discovery_results()
             st.session_state.job_preferences = updated_preferences
             st.session_state.preferences_saved = True
+            if st.session_state.current_user_id:
+                pref_data = updated_preferences.to_dict() if hasattr(updated_preferences, "to_dict") else updated_preferences
+                st.session_state.session_profile["job_preferences"] = pref_data
+                save_user_profile(st.session_state.current_user_id, st.session_state.session_profile)
             st.success(
                 "Job preferences saved. Previous discovery results were "
                 "cleared because they may no longer match."
@@ -2928,24 +3082,34 @@ def render_fit(match: dict):
     verdict = match.get("fit_verdict_label", "Fit scored")
     recommendation = match.get("application_recommendation", "")
     color = verdict_color(verdict)
+    
+    if score >= 85:
+        odds_label = "🟢 High Callback Odds (Direct Apply)"
+        odds_text = "Your profile is highly aligned. Recommended Action: Apply directly to the company site!"
+        progress_color = "#10B981"
+    elif score >= 65:
+        odds_label = "🟡 Moderate Odds (Tweak Recommended)"
+        odds_text = "Missing a few key skills. Recommended Action: Confirm familiarity or tailor your experience to boost odds."
+        progress_color = "#F59E0B"
+    else:
+        odds_label = "🔴 Low Odds (High Skill Gap)"
+        odds_text = "Significant alignment gap. Recommended Action: Focus on roles with closer skill alignment."
+        progress_color = "#EF4444"
+        
     st.markdown(
         f"""
-        <div class="metric-strip">
-            <div class="metric-cell">
-                <div class="metric-value">{score}/100</div>
-                <div class="metric-name">Fit score</div>
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-weight: bold; font-size: 1.1rem;">Overall Fit Level: <span style="color: {progress_color};">{score}%</span></span>
+                <span style="font-weight: 500; font-size: 0.95rem;">{odds_label}</span>
             </div>
-            <div class="metric-cell">
-                <div class="metric-value" style="color:{color}">{verdict}</div>
-                <div class="metric-name">Fit verdict</div>
+            <div style="background-color: #E5E7EB; border-radius: 9999px; height: 10px; width: 100%; margin-bottom: 0.75rem; overflow: hidden;">
+                <div style="background-color: {progress_color}; height: 100%; width: {score}%; border-radius: 9999px;"></div>
             </div>
-            <div class="metric-cell">
-                <div class="metric-value">{len(match.get("missing_skills", [])) + len(match.get("missing_tools", []))}</div>
-                <div class="metric-name">Open gaps</div>
-            </div>
+            <p style="margin: 0; font-size: 0.9rem; color: var(--muted); line-height: 1.4;">{odds_text}</p>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
     if recommendation:
         st.caption(f"Suggested action: {recommendation}")
@@ -3318,12 +3482,7 @@ def render_workspace():
         render_draft(st.session_state.draft)
 
 
-def render_job_ranking():
-    render_page_header(
-        "Job Ranking",
-        "Compare public job links, shortlist strong matches, and review each application individually.",
-    )
-
+def render_job_ranking_content():
     st.markdown(
         f'<div class="notice">Paste up to {MAX_BATCH_URLS} public job URLs. '
         "Blocked or script-heavy pages may fail, but other links will continue processing.</div>",
@@ -3565,105 +3724,127 @@ def render_draft(draft):
         unsafe_allow_html=True,
     )
 
-    resume_tab, letter_tab, prep_tab, ats_tab = st.tabs(
-        ["Resume", "Cover letter", "Prep pack", "ATS report"]
-    )
-    resume_text = resume_to_text(draft.resume, active_profile())
-    with resume_tab:
-        st.caption("Review wording, evidence, dates, and role relevance.")
-        edited_resume = st.text_area(
-            "Generated resume content",
-            resume_text,
-            height=480,
-            key="app_edited_resume",
-        )
-        st.download_button(
-            "Download resume text",
-            edited_resume,
-            file_name="tailored_resume.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-    with letter_tab:
-        st.caption("Check that the voice feels natural and company-specific.")
-        edited_letter = st.text_area(
-            "Generated cover letter",
-            draft.cover_letter,
-            height=480,
-            key="app_edited_letter",
-        )
-        st.download_button(
-            "Download cover letter text",
-            edited_letter,
-            file_name="cover_letter.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-    with prep_tab:
-        st.caption(
-            "Use this before applying or messaging a recruiter. It is generated "
-            "from the fit analysis and verified profile evidence."
-        )
-        edited_message = st.text_area(
-            "Recruiter message",
-            draft.recruiter_message,
-            height=180,
-            key="app_edited_msg",
-        )
-        st.download_button(
-            "Download recruiter message",
-            edited_message,
-            file_name="recruiter_message.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-        st.markdown("**Match explanation**")
-        st.write(draft.match_explanation)
+    left_pane, right_pane = st.columns([2, 3])
+    
+    with left_pane:
+        st.markdown("### 📊 ATS Analysis")
+        coverage = draft.ats_report["keyword_coverage"]
+        st.metric("ATS Keyword Coverage", f"{coverage}/100")
+        
+        st.markdown("#### Gaps & Keywords")
         render_list_panel(
-            "Application checklist",
-            draft.application_checklist,
+            "Missing role terms",
+            draft.ats_report.get("missing_terms", []),
+        )
+        render_list_panel(
+            "Covered terms",
+            draft.ats_report.get("covered_terms", []),
             "positive",
         )
-    with ats_tab:
-        coverage = draft.ats_report["keyword_coverage"]
-        st.metric("Keyword coverage", f"{coverage}/100")
-        col1, col2 = st.columns(2)
-        with col1:
-            render_list_panel(
-                "Covered terms",
-                draft.ats_report.get("covered_terms", []),
-                "positive",
-            )
-        with col2:
-            render_list_panel(
-                "Missing role terms",
-                draft.ats_report.get("missing_terms", []),
-            )
-        context_terms = draft.ats_report.get("context_terms", [])
-        excluded_terms = draft.ats_report.get("excluded_terms", [])
-        if context_terms:
-            st.caption(
-                "Qualification/context terms checked: "
-                + ", ".join(context_terms)
-            )
-        if excluded_terms:
-            st.caption(
-                "Excluded from ATS score as title, branding, or generic language: "
-                + ", ".join(excluded_terms)
-            )
         for issue in draft.ats_report.get("issues", []):
             st.warning(issue)
+            
+    with right_pane:
+        st.markdown("### 📝 Document Workspace")
+        resume_tab, letter_tab, prep_tab = st.tabs(
+            ["Resume", "Cover letter", "Prep pack"]
+        )
+        
+        resume_text = resume_to_text(draft.resume, active_profile())
+        with resume_tab:
+            st.caption("Review wording, evidence, dates, and role relevance.")
+            edited_resume = st.text_area(
+                "Generated resume content",
+                resume_text,
+                height=480,
+                key="app_edited_resume",
+            )
+            st.download_button(
+                "Download resume text",
+                edited_resume,
+                file_name="tailored_resume.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+        with letter_tab:
+            st.caption("Check that the voice feels natural and company-specific.")
+            edited_letter = st.text_area(
+                "Generated cover letter",
+                draft.cover_letter,
+                height=480,
+                key="app_edited_letter",
+            )
+            st.download_button(
+                "Download cover letter text",
+                edited_letter,
+                file_name="cover_letter.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+        with prep_tab:
+            st.caption(
+                "Use this before applying or messaging a recruiter. It is generated "
+                "from the fit analysis and verified profile evidence."
+            )
+            edited_message = st.text_area(
+                "Recruiter message",
+                draft.recruiter_message,
+                height=180,
+                key="app_edited_msg",
+            )
+            st.download_button(
+                "Download recruiter message",
+                edited_message,
+                file_name="recruiter_message.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            
+            import urllib.parse
+            company_query = urllib.parse.quote(draft.company_name)
+            search_url = f"https://www.linkedin.com/search/results/people/?keywords={company_query}%20%22hiring%20manager%22%20OR%20%22recruiter%22"
+            st.markdown(
+                f'''
+                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                    <span style="font-weight: bold; font-size: 0.95rem; display: block; margin-bottom: 0.5rem;">🔗 Recruiter Direct Outreach Strategy</span>
+                    <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.75rem;">
+                        Don't just apply online! Increase your callback odds by sending this message directly to the hiring manager or recruiter on LinkedIn.
+                    </p>
+                    <a href="{search_url}" target="_blank" style="background-color: #0077B5; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 0.9rem; display: inline-block; text-align: center;">
+                        🔍 Find hiring team at {draft.company_name} on LinkedIn ➔
+                    </a>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+            st.markdown("**Match explanation**")
+            st.write(draft.match_explanation)
+            render_list_panel(
+                "Application checklist",
+                draft.application_checklist,
+                "positive",
+            )
 
     st.markdown(
         '<div class="notice">Approval creates two PDFs and one Tracker record. '
         "It does not submit the application to the employer.</div>",
         unsafe_allow_html=True,
     )
-    if st.button(
-        "Approve, create PDFs, and track",
-        type="primary",
-        use_container_width=True,
-    ):
+    if is_demo_mode():
+        st.button(
+            "🔒 Locked in Demo Mode",
+            type="primary",
+            use_container_width=True,
+            disabled=True,
+        )
+        approve_clicked = False
+    else:
+        approve_clicked = st.button(
+            "Approve, create PDFs, and track",
+            type="primary",
+            use_container_width=True,
+        )
+    if approve_clicked:
         try:
             with st.spinner("Creating PDFs and saving the application..."):
                 st.session_state.saved = save_application_draft(draft, user_id=st.session_state.current_user_id)
@@ -3718,6 +3899,40 @@ def render_draft(draft):
                             mime="application/pdf",
                             use_container_width=True,
                         )
+
+
+def render_opportunities():
+    render_page_header(
+        "Opportunities Hub",
+        "Source, analyze, and vet job postings in one place.",
+    )
+    
+    render_progress_header(2)
+    
+    if not check_profile_prerequisite():
+        return
+        
+    if is_demo_mode():
+        st.markdown(
+            """
+            <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #1E40AF;">
+                💡 <strong>Guided Sandbox Tour (Opportunities)</strong>: Explore job recommendations or paste a custom link. 
+                Running live discoveries and document compilation is locked in Demo Mode.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    discovery_tab, analyzer_tab = st.tabs([
+        "🔍 Discovery Recommendations",
+        "🔗 Job Fit Analyzer (Custom Link)"
+    ])
+    
+    with discovery_tab:
+        render_job_discovery_content()
+        
+    with analyzer_tab:
+        render_job_ranking_content()
 
 
 def render_tracker():
@@ -4104,6 +4319,8 @@ def handle_guest_login():
             default_mock_profile = copy_profile(get_profile())
             save_user_profile(uid, default_mock_profile)
             prof = get_user_profile(uid)
+        seed_demo_data(uid)
+        st.session_state.clear()
         st.session_state.current_user_id = uid
         st.session_state.current_user_email = guest_email
         st.session_state.session_profile = prof
@@ -4161,6 +4378,7 @@ def render_auth():
                         else:
                             uid = authenticate_user(email, password)
                             if uid:
+                                st.session_state.clear()
                                 st.session_state.current_user_id = uid
                                 st.session_state.current_user_email = email
                                 st.query_params["session_token"] = make_session_token(uid)
@@ -4203,6 +4421,7 @@ def render_auth():
                         else:
                             try:
                                 uid = register_user(email, password)
+                                st.session_state.clear()
                                 st.session_state.current_user_id = uid
                                 st.session_state.current_user_email = email
                                 st.query_params["session_token"] = make_session_token(uid)
@@ -4246,32 +4465,42 @@ def main():
             "Navigation",
             [
                 "Profile",
-                "Job Discovery",
-                "Job Ranking",
+                "Opportunities",
                 "Application",
                 "Tracker",
             ],
-            index=3 if is_test else 0,
+            index=2 if is_test else 0,
             key="navigation",
             label_visibility="collapsed",
         )
         st.divider()
         if st.button("Sign Out", use_container_width=True):
             st.query_params.clear()
-            st.session_state.current_user_id = None
-            st.session_state.current_user_email = None
-            st.session_state.session_profile = copy_profile(get_profile())
+            st.session_state.clear()
             st.rerun()
 
+    # Render persistent tour exit banner for guest account users
+    if is_demo_mode():
+        st.markdown(
+            """
+            <div style="background-color: #FEF3C7; border: 1px solid #F59E0B; padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; color: #92400E;">
+                <span>👁️ <strong>Guided Sandbox Tour</strong>: You are exploring PathPilot with a pre-loaded candidate profile. Edits and live actions are locked.</span>
+                <a href="/" target="_self" style="background-color: #D97706; color: white; padding: 0.4rem 0.85rem; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 0.85rem;">Exit Tour & Start Personal Workspace</a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     if page == "Profile":
+        render_progress_header(1)
         render_profile()
-    elif page == "Job Discovery":
-        render_job_discovery()
-    elif page == "Job Ranking":
-        render_job_ranking()
+    elif page == "Opportunities":
+        render_opportunities()
     elif page == "Application":
+        render_progress_header(3)
         render_workspace()
     else:
+        render_progress_header(4)
         render_tracker()
 
 
