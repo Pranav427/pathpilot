@@ -2650,20 +2650,31 @@ def render_job_discovery_content():
         )
     stats = job_store_stats()
     source_database_fresh = False
+    
+    # Build a preferences-specific cache key to ensure refreshes are isolated per role, location, and source
+    roles_str = ",".join(sorted(preferences.target_roles)) if preferences.target_roles else "any"
+    locs_str = ",".join(sorted(preferences.locations)) if preferences.locations else "any"
+    pref_key = f"ref_{source}_{roles_str}_{locs_str}"
+    
+    if "refresh_timestamps" not in st.session_state:
+        st.session_state.refresh_timestamps = {}
+        
+    last_refresh = st.session_state.refresh_timestamps.get(pref_key)
+    if last_refresh:
+        try:
+            age_seconds = (datetime.now(timezone.utc).replace(tzinfo=None) - last_refresh).total_seconds()
+            source_database_fresh = (
+                age_seconds < JOB_STORE_REFRESH_TTL_MINUTES * 60
+            )
+        except Exception:
+            source_database_fresh = False
+
     if stats["total"]:
         latest = stats.get("latest") or "not available"
         st.caption(
             f"Local job database: {stats['total']} normalized listing(s). "
             f"Last refresh: {latest} UTC."
         )
-        try:
-            latest_refresh = datetime.fromisoformat(stats["latest"])
-            age_seconds = (datetime.now(timezone.utc).replace(tzinfo=None) - latest_refresh).total_seconds()
-            source_database_fresh = (
-                age_seconds < JOB_STORE_REFRESH_TTL_MINUTES * 60
-            )
-        except (TypeError, ValueError):
-            source_database_fresh = False
     refresh_sources = not source_database_fresh if source != "Sample catalog" else False
 
     discover_col, clear_col = st.columns([2, 1])
@@ -2694,6 +2705,7 @@ def render_job_discovery_content():
                             provider,
                             preferences,
                         )
+                        st.session_state.refresh_timestamps[pref_key] = datetime.now(timezone.utc).replace(tzinfo=None)
                     jobs, rejections = discover_jobs(
                         preferences,
                         StoredJobProvider(
