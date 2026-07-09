@@ -332,17 +332,40 @@ STRICT RULES:
     return sanitize_resume_facts(result, profile)
 
 
-def resume_to_text(resume_content) -> str:
+def resume_to_text(resume_content, profile: dict = None) -> str:
     """Converts structured resume content into readable text."""
     if isinstance(resume_content, str):
         return resume_content
 
-    lines = [
+    lines = []
+    if profile:
+        name = profile.get("name", "").strip()
+        email = profile.get("email", "").strip()
+        phone = profile.get("phone", "").strip()
+        linkedin = profile.get("linkedin", "").strip()
+        github = profile.get("github", "").strip()
+        portfolio = profile.get("portfolio", "").strip()
+        
+        contact_info = []
+        if email: contact_info.append(email)
+        if phone: contact_info.append(phone)
+        if linkedin: contact_info.append(linkedin)
+        if github: contact_info.append(github)
+        if portfolio: contact_info.append(portfolio)
+        
+        if name:
+            lines.append(name.upper())
+        if contact_info:
+            lines.append(" | ".join(contact_info))
+        if name or contact_info:
+            lines.extend(["", ""])
+
+    lines.extend([
         "PROFESSIONAL SUMMARY",
         resume_content.get("professional_summary", ""),
         "",
         "SKILLS",
-    ]
+    ])
     for category, skills in resume_content.get("skills", {}).items():
         lines.append(f"{category}: {', '.join(skills)}")
     lines.extend(["", "PROJECTS"])

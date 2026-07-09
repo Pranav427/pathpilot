@@ -3568,7 +3568,7 @@ def render_draft(draft):
     resume_tab, letter_tab, prep_tab, ats_tab = st.tabs(
         ["Resume", "Cover letter", "Prep pack", "ATS report"]
     )
-    resume_text = resume_to_text(draft.resume)
+    resume_text = resume_to_text(draft.resume, active_profile())
     with resume_tab:
         st.caption("Review wording, evidence, dates, and role relevance.")
         edited_resume = st.text_area(
