@@ -114,10 +114,10 @@ def get_user_email(user_id: int, db_path: str = DB_PATH) -> str | None:
     return rows[0]["email"] if rows else None
 
 
-def save_user_profile(user_id: int, profile: dict, profile_name: str = "Default", db_path: str = DB_PATH) -> None:
+def save_user_profile(user_id: int, profile: dict, profile_name: str = "Default", db_path: str = DB_PATH, bypass_demo_lock: bool = False) -> None:
     """Saves candidate profile dict back to the database user_profiles table."""
     init_db(db_path)
-    if get_user_email(user_id, db_path) == "demo@pathpilot.ai":
+    if not bypass_demo_lock and get_user_email(user_id, db_path) == "demo@pathpilot.ai":
         existing = db_client.execute_query(
             "SELECT user_id FROM user_profiles WHERE user_id = ? AND profile_name = ?",
             (user_id, profile_name),

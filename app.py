@@ -4313,12 +4313,9 @@ def handle_guest_login():
         uid = authenticate_user(guest_email, guest_pass)
 
     if uid:
+        default_mock_profile = copy_profile(get_profile())
+        save_user_profile(uid, default_mock_profile, bypass_demo_lock=True)
         prof = get_user_profile(uid)
-        # Seed profile with mock details if it's empty
-        if not prof or not prof.get("objective"):
-            default_mock_profile = copy_profile(get_profile())
-            save_user_profile(uid, default_mock_profile)
-            prof = get_user_profile(uid)
         seed_demo_data(uid)
         st.session_state.clear()
         st.session_state.current_user_id = uid
