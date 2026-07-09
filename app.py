@@ -2664,17 +2664,7 @@ def render_job_discovery_content():
             )
         except (TypeError, ValueError):
             source_database_fresh = False
-    refresh_sources = False
-    if source != "Sample catalog":
-        refresh_sources = st.checkbox(
-            "Refresh source database before search",
-            value=not source_database_fresh,
-            help=(
-                "Turn this on when you want to call the live providers again. "
-                "Leave it off to rank the local normalized job database "
-                "quickly."
-            ),
-        )
+    refresh_sources = not source_database_fresh if source != "Sample catalog" else False
 
     discover_col, clear_col = st.columns([2, 1])
     with discover_col:
