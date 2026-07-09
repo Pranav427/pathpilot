@@ -119,7 +119,7 @@ def save_user_profile(user_id: int, profile: dict, profile_name: str = "Default"
     init_db(db_path)
     if get_user_email(user_id, db_path) == "demo@pathpilot.ai":
         existing = db_client.execute_query(
-            "SELECT id FROM user_profiles WHERE user_id = ? AND profile_name = ?",
+            "SELECT user_id FROM user_profiles WHERE user_id = ? AND profile_name = ?",
             (user_id, profile_name),
             db_path=db_path
         )
