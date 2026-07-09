@@ -1,4 +1,5 @@
 import os
+import re
 from copy import deepcopy
 
 from dotenv import load_dotenv
@@ -18,6 +19,17 @@ def split_profile_items(value: str) -> list[str]:
             seen.add(key)
             items.append(item)
     return items
+
+
+def extract_metrics_from_text(text: str) -> list[str]:
+    """Auto-extracts potential grounding metrics (percentages, sizes, counts) from text."""
+    if not text:
+        return []
+    # Match metrics like 93.91%, 96%, 140K, 15,000
+    pattern = r"\b\d+(?:\.\d+)?%|\b\d+K\b|\b\d{1,3}(?:,\d{3})+\b"
+    matches = re.findall(pattern, text)
+    seen = set()
+    return [m for m in matches if not (m.lower() in seen or seen.add(m.lower()))]
 
 
 def parse_profile_rows(value: str, fields: list[str]) -> list[dict]:
@@ -113,6 +125,7 @@ def build_session_profile(
                 "description": description,
                 "highlights": [description] if description else [],
                 "github": profile["github"],
+                "grounding_metrics": extract_metrics_from_text(description),
             }
         )
 
@@ -423,7 +436,8 @@ def get_profile() -> dict:
                     "Tuned Linear SVM with five-fold GridSearchCV, achieving 96.16% test accuracy",
                     "Implemented TF-IDF, lemmatization, VADER sentiment analysis, and Streamlit inference",
                     "Saved the trained model, vectorizer, and label encoder for reproducible deployment"
-                ]
+                ],
+                "grounding_metrics": ["96.16%", "94.60%"]
             },
 
             {
@@ -465,7 +479,8 @@ def get_profile() -> dict:
                     "Achieved 93.91% final test accuracy after 10 training epochs",
                     "Deployed inference with Streamlit and a TensorFlow/Keras EfficientNetV2-B0 model",
                     "Presented and published the research at ICETCI-2025 in Springer proceedings"
-                ]
+                ],
+                "grounding_metrics": ["93.91%", "140K", "15,000", "10"]
             }
         ],
 
@@ -753,6 +768,42 @@ def display_profile(profile: dict):
         print(f"   • {interest}")
 
     print("\n" + "=" * 70)
+
+
+def get_blank_profile() -> dict:
+    """Returns a completely empty candidate profile structure."""
+    return {
+        "name": "",
+        "email": "",
+        "phone": "",
+        "linkedin": "",
+        "github": "",
+        "portfolio": "",
+        "location": "",
+        "objective": "",
+        "skills": {
+            "Programming Languages": [],
+            "Artificial Intelligence & Machine Learning": [],
+            "Deep Learning & Computer Vision": [],
+            "Software Fundamentals": [],
+            "Data Analysis": [],
+            "Libraries & Frameworks": [],
+            "Databases": [],
+            "Tools & Platforms": [],
+            "Soft Skills": [],
+        },
+        "education": [],
+        "experience": [],
+        "projects": [],
+        "certifications": [],
+        "courses": [],
+        "achievements": [],
+        "publications": [],
+        "volunteer_experience": [],
+        "languages": [],
+        "awards": [],
+        "areas_of_interest": [],
+    }
 
 
 # ───────────────── MAIN ───────────────── #

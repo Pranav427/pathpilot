@@ -69,6 +69,18 @@ def test_confirmed_familiarity_does_not_inflate_fit_score():
     ]
 
 
+def test_confirmed_familiarity_is_capped_for_application_wording():
+    match = {"match_score": 52}
+
+    annotated = attach_confirmed_familiarity(
+        match,
+        [f"Term {index}" for index in range(1, 12)],
+    )
+
+    assert len(annotated["user_confirmed_terms"]) == 8
+    assert annotated["user_confirmed_terms"][-1] == "Term 8"
+
+
 def test_master_software_skills_stay_concise_and_verified():
     skills = get_profile()["skills"]["Software Fundamentals"]
 

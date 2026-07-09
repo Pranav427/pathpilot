@@ -158,9 +158,13 @@ def flatten_profile_terms(profile: dict) -> set[str]:
         terms.update(tokenize_phrase(cert))
 
     for course in profile.get("courses", []):
-        terms.add(normalize(course.get("name", "")))
-        terms.add(normalize(course.get("provider", "")))
-        terms.update(tokenize_phrase(course.get("description", "")))
+        if isinstance(course, dict):
+            terms.add(normalize(course.get("name", "")))
+            terms.add(normalize(course.get("provider", "")))
+            terms.update(tokenize_phrase(course.get("description", "")))
+        else:
+            terms.add(normalize(str(course)))
+            terms.update(tokenize_phrase(str(course)))
 
     for education in profile.get("education", []):
         terms.add(normalize(education.get("degree", "")))
@@ -182,6 +186,28 @@ def flatten_profile_terms(profile: dict) -> set[str]:
     for interest in profile.get("interests", []):
         terms.add(normalize(interest))
         terms.update(tokenize_phrase(interest))
+    for interest in profile.get("areas_of_interest", []):
+        terms.add(normalize(interest))
+        terms.update(tokenize_phrase(interest))
+        
+    for pub in profile.get("publications", []):
+        if isinstance(pub, dict):
+            terms.add(normalize(pub.get("title", "")))
+            terms.add(normalize(pub.get("publisher", "")))
+        else:
+            terms.add(normalize(str(pub)))
+            terms.update(tokenize_phrase(str(pub)))
+            
+    for vol in profile.get("volunteer_experience", []):
+        terms.add(normalize(str(vol)))
+        terms.update(tokenize_phrase(str(vol)))
+        
+    for lang in profile.get("languages", []):
+        terms.add(normalize(str(lang)))
+        
+    for award in profile.get("awards", []):
+        terms.add(normalize(str(award)))
+        terms.update(tokenize_phrase(str(award)))
 
     return {term for term in terms if term}
 
@@ -290,6 +316,25 @@ def fit_guidance(score: int, missing_skills: list[str], missing_tools: list[str]
     )
 
 
+def application_recommendation(
+    score: int,
+    missing_skills: list[str],
+    missing_tools: list[str],
+    seniority_penalty_value: int = 0,
+) -> str:
+    """Returns a short action label separate from the fit verdict."""
+    core_gap_count = len(missing_skills) + len(missing_tools)
+    if score >= 80 and core_gap_count <= 6 and seniority_penalty_value == 0:
+        return "Prioritize"
+    if score >= 65 and core_gap_count <= 12:
+        return "Apply"
+    if score >= 45 and core_gap_count <= 25:
+        return "Apply with honest positioning"
+    if score >= 45:
+        return "Practice or low-priority apply"
+    return "Skip for now"
+
+
 def seniority_penalty(job_analysis: dict) -> tuple[int, str]:
     """Returns a conservative penalty for explicit experienced-hire requirements."""
     searchable = " ".join(
@@ -360,6 +405,12 @@ def calculate_fit_score(job_analysis: dict, profile: dict) -> dict:
         "match_score": final_score,
         "fit_verdict": fit_verdict(final_score),
         "fit_verdict_label": fit_verdict_label(final_score),
+        "application_recommendation": application_recommendation(
+            final_score,
+            missing_skills,
+            missing_tools,
+            experience_penalty,
+        ),
         "fit_guidance": fit_guidance(final_score, missing_skills, missing_tools),
         "score_components": {
             "skills": skill_score,

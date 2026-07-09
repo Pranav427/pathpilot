@@ -135,7 +135,7 @@ def fetch_html(url: str, timeout: int = 20) -> str:
         headers={
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "ApplySmartAI/1.0"
+                "PathPilot/1.0"
             ),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
@@ -148,9 +148,11 @@ def fetch_html(url: str, timeout: int = 20) -> str:
             charset = response.headers.get_content_charset() or "utf-8"
             return response.read().decode(charset, errors="replace")
     except HTTPError as exc:
+        if exc.code in {403, 503, 401}:
+            raise RuntimeError("Anti-bot protection or access restriction detected on this page. Please copy-paste the job description manually.") from exc
         raise RuntimeError(f"Could not fetch job URL. HTTP {exc.code}") from exc
     except URLError as exc:
-        raise RuntimeError(f"Could not fetch job URL: {exc.reason}") from exc
+        raise RuntimeError("Could not connect to the job posting URL. Please verify the link or copy-paste the job description manually.") from exc
 
 
 def guess_company(parser: JobPageParser, url: str) -> str:

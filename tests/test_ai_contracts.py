@@ -153,7 +153,7 @@ def test_missing_anthropic_key_has_actionable_error(monkeypatch):
         raise AssertionError("Expected missing API key validation to fail")
 
     assert ".env.example" in message
-    assert "restart ApplySmart AI" in message
+    assert "restart PathPilot" in message
 
 
 def test_anthropic_is_default_provider(monkeypatch):

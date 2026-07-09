@@ -1,5 +1,5 @@
 # main.py
-# ApplySmart AI — Master Controller
+# PathPilot — Master Controller
 # One command → full pipeline → resume PDF + cover letter PDF
 
 from analyzer import analyze_job, display_analysis
@@ -89,7 +89,7 @@ def confirm_missing_profile_terms(match: dict) -> list[str]:
 
 def print_banner():
     print("\n" + "="*60)
-    print("        🚀 APPLYSMART AI — JOB APPLICATION ASSISTANT")
+    print("        🚀 PATHPILOT — CAREER INTELLIGENCE WORKSPACE")
     print("="*60)
     print("  Powered by IYBUN  |  Built with Python")
     print("="*60 + "\n")

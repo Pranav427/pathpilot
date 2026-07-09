@@ -2,15 +2,17 @@
 
 import json
 import os
-import sqlite3
 import webbrowser
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
+import db_client
 
 
 DB_PATH = "outputs/applications.db"
 
 # Valid application lifecycle statuses
 VALID_STATUSES = [
+    "SHORTLISTED",        # Shortlisted from discovery or ranking
     "DRAFT_GENERATED",    # Documents created, not applied yet
     "APPLIED",            # Application submitted
     "ASSESSMENT",         # Online assessment received
@@ -23,77 +25,150 @@ VALID_STATUSES = [
 
 def init_db(db_path: str = DB_PATH):
     """Creates the database and table if they don't exist."""
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS applications (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                company_name        TEXT NOT NULL,
-                job_title           TEXT NOT NULL,
-                source_url          TEXT,
-                status              TEXT NOT NULL DEFAULT 'DRAFT_GENERATED',
-                match_score         INTEGER NOT NULL DEFAULT 0,
-                ats_score           INTEGER NOT NULL DEFAULT 0,
-                resume_path         TEXT,
-                cover_letter_path   TEXT,
-                notes               TEXT,
-                job_analysis_json   TEXT NOT NULL DEFAULT '{}',
-                match_json          TEXT NOT NULL DEFAULT '{}',
-                ats_report_json     TEXT NOT NULL DEFAULT '{}',
-                created_at          TEXT NOT NULL,
-                updated_at          TEXT NOT NULL
-            )
-        """)
+    db_client.init_db_schema(db_path)
 
-        # Safe migration — add columns if missing
-        existing = {
-            row[1]
-            for row in conn.execute(
-                "PRAGMA table_info(applications)"
-            ).fetchall()
-        }
-        migrations = {
-            "source_url": "ALTER TABLE applications ADD COLUMN source_url TEXT",
-            "notes":      "ALTER TABLE applications ADD COLUMN notes TEXT",
-        }
-        for col, sql in migrations.items():
-            if col not in existing:
-                conn.execute(sql)
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS job_search_runs (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                total_urls          INTEGER NOT NULL DEFAULT 0,
-                successful_jobs     INTEGER NOT NULL DEFAULT 0,
-                failed_jobs         INTEGER NOT NULL DEFAULT 0,
-                report_path         TEXT,
-                failures_json       TEXT NOT NULL DEFAULT '[]',
-                created_at          TEXT NOT NULL
-            )
-        """)
+def register_user(email: str, password_plain: str, db_path: str = DB_PATH) -> int:
+    """Registers a new user and returns their user ID. Raises ValueError if email exists."""
+    init_db(db_path)
+    email = email.strip().lower()
+    pw_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    
+    try:
+        user_id = db_client.execute_write(
+            "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
+            (email, pw_hash, now),
+            db_path=db_path
+        )
+        # Create a default blank profile structure for this user
+        db_client.execute_write(
+            "INSERT INTO user_profiles (user_id, name, email, raw_profile_json, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, email.split("@")[0].title(), email, "{}", now),
+            db_path=db_path
+        )
+        return int(user_id)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "unique" in err_msg or "integrity" in err_msg or "duplicate" in err_msg:
+            raise ValueError(f"User with email '{email}' already exists.")
+        raise
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ranked_jobs (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                search_run_id       INTEGER NOT NULL,
-                rank                INTEGER NOT NULL,
-                company_name        TEXT NOT NULL,
-                job_title           TEXT NOT NULL,
-                source_url          TEXT NOT NULL,
-                fit_score           INTEGER NOT NULL DEFAULT 0,
-                fit_verdict         TEXT,
-                extraction_quality  TEXT,
-                missing_skills_json TEXT NOT NULL DEFAULT '[]',
-                job_analysis_json   TEXT NOT NULL DEFAULT '{}',
-                match_json          TEXT NOT NULL DEFAULT '{}',
-                created_at          TEXT NOT NULL,
-                FOREIGN KEY(search_run_id)
-                    REFERENCES job_search_runs(id)
-                    ON DELETE CASCADE
-            )
-        """)
+
+def authenticate_user(email: str, password_plain: str, db_path: str = DB_PATH) -> int | None:
+    """Verifies credentials and returns user ID, or None if invalid."""
+    init_db(db_path)
+    email = email.strip().lower()
+    pw_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
+    
+    rows = db_client.execute_query(
+        "SELECT id FROM users WHERE email=? AND password_hash=?",
+        (email, pw_hash),
+        db_path=db_path
+    )
+    return int(rows[0]["id"]) if rows else None
+
+
+def get_user_profile(user_id: int, profile_name: str = "Default", db_path: str = DB_PATH) -> dict | None:
+    """Fetches user profile details as a candidate profile dict."""
+    init_db(db_path)
+    rows = db_client.execute_query(
+        "SELECT * FROM user_profiles WHERE user_id=? AND profile_name=?",
+        (user_id, profile_name),
+        db_path=db_path
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    
+    try:
+        profile = json.loads(row["raw_profile_json"])
+    except (TypeError, json.JSONDecodeError):
+        profile = {}
+        
+    profile.setdefault("name", row["name"])
+    profile.setdefault("email", row["email"])
+    profile.setdefault("phone", row["phone"] or "")
+    profile.setdefault("linkedin", row["linkedin"] or "")
+    profile.setdefault("github", row["github"] or "")
+    profile.setdefault("portfolio", row["portfolio"] or "")
+    profile.setdefault("location", row["location"] or "")
+    profile.setdefault("objective", "")
+    profile.setdefault("education", [])
+    profile.setdefault("experience", [])
+    profile.setdefault("projects", [])
+    profile.setdefault("skills", {})
+    profile.setdefault("certifications", [])
+    profile.setdefault("achievements", [])
+    return profile
+
+
+def get_user_email(user_id: int, db_path: str = DB_PATH) -> str | None:
+    """Returns the email address for a given user ID."""
+    init_db(db_path)
+    rows = db_client.execute_query(
+        "SELECT email FROM users WHERE id=?",
+        (user_id,),
+        db_path=db_path
+    )
+    return rows[0]["email"] if rows else None
+
+
+def save_user_profile(user_id: int, profile: dict, profile_name: str = "Default", db_path: str = DB_PATH) -> None:
+    """Saves candidate profile dict back to the database user_profiles table."""
+    init_db(db_path)
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    
+    name = profile.get("name", "").strip()
+    email = profile.get("email", "").strip()
+    phone = profile.get("phone", "").strip()
+    linkedin = profile.get("linkedin", "").strip()
+    github = profile.get("github", "").strip()
+    portfolio = profile.get("portfolio", "").strip()
+    location = profile.get("location", "").strip()
+    
+    raw_profile_json = json.dumps(profile, ensure_ascii=False)
+    
+    db_client.execute_write(
+        """
+        INSERT INTO user_profiles (
+            user_id, profile_name, name, email, phone, linkedin, github, portfolio, location, raw_profile_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, profile_name) DO UPDATE SET
+            name=excluded.name,
+            email=excluded.email,
+            phone=excluded.phone,
+            linkedin=excluded.linkedin,
+            github=excluded.github,
+            portfolio=excluded.portfolio,
+            location=excluded.location,
+            raw_profile_json=excluded.raw_profile_json,
+            updated_at=excluded.updated_at
+        """,
+        (user_id, profile_name, name, email, phone, linkedin, github, portfolio, location, raw_profile_json, now),
+        db_path=db_path
+    )
+
+
+def list_user_profiles(user_id: int, db_path: str = DB_PATH) -> list[str]:
+    """Returns a list of profile/persona names for the given user."""
+    init_db(db_path)
+    rows = db_client.execute_query(
+        "SELECT profile_name FROM user_profiles WHERE user_id=? ORDER BY profile_name ASC",
+        (user_id,),
+        db_path=db_path
+    )
+    return [row["profile_name"] for row in rows]
+
+
+def delete_user_profile(user_id: int, profile_name: str, db_path: str = DB_PATH) -> None:
+    """Deletes a career persona for a user."""
+    init_db(db_path)
+    db_client.execute_write(
+        "DELETE FROM user_profiles WHERE user_id=? AND profile_name=?",
+        (user_id, profile_name),
+        db_path=db_path
+    )
 
 
 def record_job_search_run(
@@ -101,74 +176,76 @@ def record_job_search_run(
     failures: list[str],
     total_urls: int,
     report_path: str = "",
+    user_id: int = 1,
     db_path: str = DB_PATH,
 ) -> int:
     """Stores one job ranking session and its ranked jobs."""
     init_db(db_path)
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.execute(
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    search_run_id = db_client.execute_write(
+        """
+        INSERT INTO job_search_runs (
+            total_urls, successful_jobs, failed_jobs,
+            report_path, failures_json, created_at, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(total_urls),
+            len(ranked_jobs),
+            len(failures or []),
+            report_path,
+            json.dumps(failures or [], ensure_ascii=False),
+            now,
+            user_id,
+        ),
+        db_path=db_path
+    )
+
+    for job in ranked_jobs:
+        fetched = job.fetched_job
+        match = job.match
+        db_client.execute_write(
             """
-            INSERT INTO job_search_runs (
-                total_urls, successful_jobs, failed_jobs,
-                report_path, failures_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO ranked_jobs (
+                search_run_id, rank, company_name, job_title, source_url,
+                fit_score, fit_verdict, extraction_quality,
+                missing_skills_json, job_analysis_json, match_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                int(total_urls),
-                len(ranked_jobs),
-                len(failures or []),
-                report_path,
-                json.dumps(failures or [], ensure_ascii=False),
+                search_run_id,
+                int(job.rank),
+                fetched.company_name,
+                fetched.job_title,
+                fetched.source_url,
+                int(match.get("match_score", 0)),
+                match.get("fit_verdict_label", ""),
+                fetched.extraction_quality,
+                json.dumps(match.get("missing_skills", []), ensure_ascii=False),
+                json.dumps(job.job_analysis, ensure_ascii=False),
+                json.dumps(match, ensure_ascii=False),
                 now,
             ),
+            db_path=db_path
         )
-        search_run_id = int(cursor.lastrowid)
 
-        for job in ranked_jobs:
-            fetched = job.fetched_job
-            match = job.match
-            conn.execute(
-                """
-                INSERT INTO ranked_jobs (
-                    search_run_id, rank, company_name, job_title, source_url,
-                    fit_score, fit_verdict, extraction_quality,
-                    missing_skills_json, job_analysis_json, match_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    search_run_id,
-                    int(job.rank),
-                    fetched.company_name,
-                    fetched.job_title,
-                    fetched.source_url,
-                    int(match.get("match_score", 0)),
-                    match.get("fit_verdict_label", ""),
-                    fetched.extraction_quality,
-                    json.dumps(match.get("missing_skills", []), ensure_ascii=False),
-                    json.dumps(job.job_analysis, ensure_ascii=False),
-                    json.dumps(match, ensure_ascii=False),
-                    now,
-                ),
-            )
-
-        return search_run_id
+    return search_run_id
 
 
-def list_job_search_runs(limit: int = 10, db_path: str = DB_PATH) -> list[dict]:
-    """Returns recent job ranking sessions."""
+def list_job_search_runs(limit: int = 10, db_path: str = DB_PATH, user_id: int = 1) -> list[dict]:
+    """Returns recent job ranking sessions for a user."""
     init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT id, total_urls, successful_jobs, failed_jobs,
-                   report_path, failures_json, created_at
-            FROM job_search_runs
-            ORDER BY id DESC LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+    rows = db_client.execute_query(
+        """
+        SELECT id, total_urls, successful_jobs, failed_jobs,
+               report_path, failures_json, created_at
+        FROM job_search_runs
+        WHERE user_id = ?
+        ORDER BY id DESC LIMIT ?
+        """,
+        (user_id, limit),
+        db_path=db_path
+    )
     return [dict(row) for row in rows]
 
 
@@ -178,20 +255,19 @@ def list_ranked_jobs_for_run(
 ) -> list[dict]:
     """Returns ranked jobs for one search session."""
     init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT rank, company_name, job_title, source_url,
-                   fit_score, fit_verdict, extraction_quality,
-                   missing_skills_json, job_analysis_json,
-                   match_json, created_at
-            FROM ranked_jobs
-            WHERE search_run_id = ?
-            ORDER BY rank ASC
-            """,
-            (search_run_id,),
-        ).fetchall()
+    rows = db_client.execute_query(
+        """
+        SELECT rank, company_name, job_title, source_url,
+               fit_score, fit_verdict, extraction_quality,
+               missing_skills_json, job_analysis_json,
+               match_json, created_at
+        FROM ranked_jobs
+        WHERE search_run_id = ?
+        ORDER BY rank ASC
+        """,
+        (search_run_id,),
+        db_path=db_path
+    )
     return [dict(row) for row in rows]
 
 
@@ -256,40 +332,42 @@ def record_application(
     status: str = "DRAFT_GENERATED",
     source_url: str = "",
     notes: str = "",
+    user_id: int = 1,
     db_path: str = DB_PATH,
 ) -> int:
     """Saves a new application record. Returns the new row ID."""
     init_db(db_path)
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO applications (
-                company_name, job_title, source_url, status,
-                match_score, ats_score,
-                resume_path, cover_letter_path, notes,
-                job_analysis_json, match_json, ats_report_json,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                company_name,
-                job_title,
-                source_url,
-                status,
-                int(match.get("match_score", 0)),
-                int(ats_report.get("keyword_coverage", 0)),
-                resume_path,
-                cover_letter_path,
-                notes,
-                json.dumps(job_analysis, ensure_ascii=False),
-                json.dumps(match, ensure_ascii=False),
-                json.dumps(ats_report, ensure_ascii=False),
-                now,
-                now,
-            ),
-        )
-        return int(cursor.lastrowid)
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    val = db_client.execute_write(
+        """
+        INSERT INTO applications (
+            company_name, job_title, source_url, status,
+            match_score, ats_score,
+            resume_path, cover_letter_path, notes,
+            job_analysis_json, match_json, ats_report_json,
+            created_at, updated_at, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            company_name,
+            job_title,
+            source_url,
+            status,
+            int(match.get("match_score", 0)),
+            int(ats_report.get("keyword_coverage", 0)),
+            resume_path,
+            cover_letter_path,
+            notes,
+            json.dumps(job_analysis, ensure_ascii=False),
+            json.dumps(match, ensure_ascii=False),
+            json.dumps(ats_report, ensure_ascii=False),
+            now,
+            now,
+            user_id,
+        ),
+        db_path=db_path
+    )
+    return int(val)
 
 
 def update_application_status(
@@ -304,75 +382,77 @@ def update_application_status(
         return
 
     init_db(db_path)
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    with sqlite3.connect(db_path) as conn:
-        if notes:
-            conn.execute(
-                "UPDATE applications SET status=?, notes=?, updated_at=? WHERE id=?",
-                (status, notes, now, application_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE applications SET status=?, updated_at=? WHERE id=?",
-                (status, now, application_id),
-            )
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    if notes:
+        db_client.execute_write(
+            "UPDATE applications SET status=?, notes=?, updated_at=? WHERE id=?",
+            (status, notes, now, application_id),
+            db_path=db_path
+        )
+    else:
+        db_client.execute_write(
+            "UPDATE applications SET status=?, updated_at=? WHERE id=?",
+            (status, now, application_id),
+            db_path=db_path
+        )
     print(f"✅ Application #{application_id} updated to {status}")
 
 
 def list_applications(
     limit: int = 20,
     status_filter: str = None,
-    db_path: str = DB_PATH
+    db_path: str = DB_PATH,
+    user_id: int = 1
 ) -> list[dict]:
-    """Returns applications, optionally filtered by status."""
+    """Returns applications for a user, optionally filtered by status."""
     init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        if status_filter:
-            rows = conn.execute(
-                """
-                SELECT id, company_name, job_title, source_url,
-                       status, match_score, ats_score,
-                       resume_path, cover_letter_path, notes,
-                       created_at, updated_at
-                FROM applications
-                WHERE status = ?
-                ORDER BY id DESC LIMIT ?
-                """,
-                (status_filter, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT id, company_name, job_title, source_url,
-                       status, match_score, ats_score,
-                       resume_path, cover_letter_path, notes,
-                       created_at, updated_at
-                FROM applications
-                ORDER BY id DESC LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def get_application(application_id: int, db_path: str = DB_PATH) -> dict | None:
-    """Returns one application record by ID."""
-    init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
+    if status_filter:
+        rows = db_client.execute_query(
             """
             SELECT id, company_name, job_title, source_url,
                    status, match_score, ats_score,
                    resume_path, cover_letter_path, notes,
                    created_at, updated_at
             FROM applications
-            WHERE id = ?
+            WHERE status = ? AND user_id = ?
+            ORDER BY id DESC LIMIT ?
             """,
-            (application_id,),
-        ).fetchone()
-    return dict(row) if row else None
+            (status_filter, user_id, limit),
+            db_path=db_path
+        )
+    else:
+        rows = db_client.execute_query(
+            """
+            SELECT id, company_name, job_title, source_url,
+                   status, match_score, ats_score,
+                   resume_path, cover_letter_path, notes,
+                   created_at, updated_at
+            FROM applications
+            WHERE user_id = ?
+            ORDER BY id DESC LIMIT ?
+            """,
+            (user_id, limit),
+            db_path=db_path
+        )
+    return [dict(row) for row in rows]
+
+
+def get_application(application_id: int, db_path: str = DB_PATH, user_id: int = 1) -> dict | None:
+    """Returns one application record by ID for a user."""
+    init_db(db_path)
+    rows = db_client.execute_query(
+        """
+        SELECT id, company_name, job_title, source_url,
+               status, match_score, ats_score,
+               resume_path, cover_letter_path, notes,
+               created_at, updated_at, user_id
+        FROM applications
+        WHERE id = ? AND user_id = ?
+        """,
+        (application_id, user_id),
+        db_path=db_path
+    )
+    return dict(rows[0]) if rows else None
 
 
 def open_application_asset(application_id: int, asset: str):
@@ -405,33 +485,50 @@ def open_application_asset(application_id: int, asset: str):
         print(f"⚠️  Could not open automatically. Open manually: {target}")
 
 
-def get_stats(db_path: str = DB_PATH) -> dict:
-    """Returns summary statistics across all applications."""
+def get_stats(db_path: str = DB_PATH, user_id: int = 1) -> dict:
+    """Returns summary statistics across all applications for a user."""
     init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM applications"
-        ).fetchone()[0]
+    
+    total_rows = db_client.execute_query(
+        "SELECT COUNT(*) AS count FROM applications WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    total = total_rows[0]["count"] if total_rows else 0
 
-        avg_match = conn.execute(
-            "SELECT AVG(match_score) FROM applications"
-        ).fetchone()[0] or 0
+    avg_match_rows = db_client.execute_query(
+        "SELECT AVG(match_score) AS avg_match FROM applications WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    avg_match = avg_match_rows[0]["avg_match"] if avg_match_rows else 0
+    if avg_match is None:
+        avg_match = 0
 
-        avg_ats = conn.execute(
-            "SELECT AVG(ats_score) FROM applications"
-        ).fetchone()[0] or 0
+    avg_ats_rows = db_client.execute_query(
+        "SELECT AVG(ats_score) AS avg_ats FROM applications WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    avg_ats = avg_ats_rows[0]["avg_ats"] if avg_ats_rows else 0
+    if avg_ats is None:
+        avg_ats = 0
 
-        by_status = dict(
-            conn.execute(
-                "SELECT status, COUNT(*) FROM applications GROUP BY status"
-            ).fetchall()
-        )
+    by_status_rows = db_client.execute_query(
+        "SELECT status, COUNT(*) AS count FROM applications WHERE user_id = ? GROUP BY status",
+        (user_id,),
+        db_path=db_path
+    )
+    by_status = {row["status"]: row["count"] for row in by_status_rows}
 
-        top_match = conn.execute(
-            """SELECT company_name, job_title, match_score
-               FROM applications
-               ORDER BY match_score DESC LIMIT 3"""
-        ).fetchall()
+    top_match = db_client.execute_query(
+        """SELECT company_name, job_title, match_score
+           FROM applications
+           WHERE user_id = ?
+           ORDER BY match_score DESC LIMIT 3""",
+        (user_id,),
+        db_path=db_path
+    )
 
     return {
         "total":      total,

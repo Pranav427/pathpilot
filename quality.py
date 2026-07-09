@@ -13,6 +13,42 @@ ATS_NOISE_TERMS = {
     "sde",
     "equal opportunity employer",
     "fast paced environment",
+    "john doe",
+    "johndoe",
+}
+
+ATS_CONTEXT_ONLY_TERMS = {
+    "6 months",
+    "analytical mindset",
+    "artificial intelligence",
+    "aerospace",
+    "b tech",
+    "b.tech",
+    "bachelor s degree",
+    "bachelor's degree",
+    "computer science",
+    "data engineering",
+    "data science",
+    "digital engineering",
+    "full time internship",
+    "full-time internship",
+    "innovation centre",
+    "innovation center",
+    "mathematics",
+    "ml applications",
+    "m.eng",
+    "m.eng.",
+    "m.sc",
+    "m.sc.",
+    "meng",
+    "msc",
+    "permanent",
+    "production grade",
+    "production-grade",
+    "professional",
+    "remote",
+    "verbal communication",
+    "written communication",
 }
 
 
@@ -54,18 +90,45 @@ def _resume_text(resume_text) -> str:
     return "\n".join(lines)
 
 
+def _is_context_only_term(term: str) -> bool:
+    normalized = normalize(term)
+    compact = normalized.replace(".", "")
+    return normalized in ATS_CONTEXT_ONLY_TERMS or compact in ATS_CONTEXT_ONLY_TERMS
+
+
+def _is_redundant_missing_term(term: str, covered_terms: list[str]) -> bool:
+    normalized_term = normalize(term)
+    if not normalized_term:
+        return False
+
+    for covered in covered_terms:
+        normalized_covered = normalize(covered)
+        if normalized_covered and normalized_covered in normalized_term:
+            return True
+    return False
+
+
 def build_ats_report(resume_text, job_analysis: dict) -> dict:
     resume_text = _resume_text(resume_text)
-    priority_terms = (
-        list(job_analysis.get("skills", []))
-        + list(job_analysis.get("tools", []))
-    )
+    priority_terms = []
     context_terms = []
     excluded_terms = []
+    for term in (
+        list(job_analysis.get("skills", []))
+        + list(job_analysis.get("tools", []))
+    ):
+        normalized = normalize(term)
+        if normalized in ATS_NOISE_TERMS:
+            excluded_terms.append(term)
+        else:
+            priority_terms.append(term)
+
     for term in job_analysis.get("keywords", []):
         normalized = normalize(term)
         if normalized in ATS_NOISE_TERMS:
             excluded_terms.append(term)
+        elif _is_context_only_term(term):
+            context_terms.append(term)
         elif re.search(
             r"\b(?:bachelor|master|phd|degree|\d+\s*\+?\s*(?:years?|yrs?))\b",
             normalized,
@@ -85,7 +148,15 @@ def build_ats_report(resume_text, job_analysis: dict) -> dict:
 
     candidate_terms = _candidate_terms_from_text(resume_text)
     covered = [term for term in unique_terms if has_term(candidate_terms, term)]
-    missing = [term for term in unique_terms if term not in covered]
+    priority_keys = {normalize(term) for term in priority_terms}
+    missing = [
+        term for term in unique_terms
+        if (
+            normalize(term) in priority_keys
+            and term not in covered
+            and not _is_redundant_missing_term(term, covered)
+        )
+    ]
     coverage = round((len(covered) / len(unique_terms)) * 100) if unique_terms else 0
 
     checks = {
@@ -171,7 +242,7 @@ def audit_application_documents(
 
     combined = "\n\n".join([resume_text, cover_text])
     if combined:
-        if cover_text and unsupported_profile_claims(cover_text):
+        if cover_text and unsupported_profile_claims(cover_text, profile=profile):
             issues.append("Known project or internship evidence is mixed incorrectly.")
         if confirmed_terms and unsupported_confirmed_claims(
             combined,
@@ -195,48 +266,91 @@ def audit_application_documents(
         ):
             issues.append("Production-level experience wording requires manual proof.")
 
-    if resume_text:
+    # Dynamic resume project section validations
+    if resume_text and profile.get("projects"):
         lower_resume = resume_text.lower()
-        medical_start = lower_resume.find("medical condition classification")
-        if medical_start >= 0:
-            section_end_candidates = [
-                index for index in (
-                    lower_resume.find(
-                        "modern security system",
-                        medical_start + 1,
-                    ),
-                    lower_resume.find("certifications", medical_start + 1),
-                )
-                if index >= 0
+        
+        projects_data = []
+        for project in profile.get("projects", []):
+            name = project.get("name", "").strip()
+            metrics = project.get("grounding_metrics", [])
+            if not metrics:
+                continue
+            projects_data.append({
+                "name": name,
+                "name_lower": name.lower(),
+                "metrics": [m.lower() for m in metrics]
+            })
+            
+        for idx, current_p in enumerate(projects_data):
+            p_start = lower_resume.find(current_p["name_lower"])
+            if p_start >= 0:
+                section_ends = [
+                    lower_resume.find("certifications"), 
+                    lower_resume.find("education"),
+                    lower_resume.find("experience")
+                ]
+                for other_p in projects_data:
+                    if other_p["name_lower"] != current_p["name_lower"]:
+                        other_start = lower_resume.find(other_p["name_lower"])
+                        if other_start > p_start:
+                            section_ends.append(other_start)
+                valid_ends = [end for end in section_ends if end > p_start]
+                p_end = min(valid_ends) if valid_ends else len(lower_resume)
+                
+                project_section = lower_resume[p_start:p_end]
+                
+                for other_idx, other_p in enumerate(projects_data):
+                    if idx == other_idx:
+                        continue
+                    exclusive_other_metrics = [
+                        m for m in other_p["metrics"] 
+                        if m not in current_p["metrics"]
+                    ]
+                    for metric in exclusive_other_metrics:
+                        if metric in project_section:
+                            issues.append(
+                                f"Project '{current_p['name']}' contains metrics belonging to another project."
+                            )
+                            break
+
+    # Dynamic resume experience section validations
+    if resume_text and profile.get("experience"):
+        experience_data = []
+        for exp in profile.get("experience", []):
+            company = exp.get("company", "").lower()
+            title = exp.get("title", "").lower()
+            exp_text = (exp.get("description", "") + " " + " ".join(exp.get("highlights", []))).lower()
+            restricted_tools = [
+                "openai", "gemini", "llm api", "claude api", 
+                "prompt engineering", "agentic workflow", "agentic ai",
+                "rag", "production grade", "production-grade"
             ]
-            medical_end = min(section_end_candidates) if section_end_candidates \
-                else len(resume_text)
-            medical_section = resume_text[medical_start:medical_end]
-            if "93.91%" in medical_section or "15,000" in medical_section:
-                issues.append(
-                    "Medical project contains metrics belonging to the face project."
-                )
+            experience_data.append({
+                "company": company,
+                "title": title,
+                "restricted_terms": [t for t in restricted_tools if t not in exp_text]
+            })
 
         for line in resume_text.splitlines():
             lower_line = line.lower()
-            internship_context = (
-                "internship" in lower_line or "skilldzire" in lower_line
-            )
-            unsupported_tools = any(
-                marker in lower_line
-                for marker in (
-                    "openai",
-                    "gemini",
-                    "llm api",
-                    "claude api",
-                    "prompt engineering",
-                    "agentic workflow",
+            exp_leak_detected = False
+            for exp in experience_data:
+                if not exp["company"]:
+                    continue
+                is_matching_exp = (
+                    exp["company"] in lower_line 
+                    or (len(exp["title"]) > 5 and exp["title"] in lower_line)
+                    or ("internship" in lower_line and exp["company"] in lower_line)
                 )
-            )
-            if internship_context and unsupported_tools:
-                issues.append(
-                    "Internship line contains unsupported AI implementation claims."
-                )
+                if is_matching_exp:
+                    if any(term in lower_line for term in exp["restricted_terms"]):
+                        issues.append(
+                            f"Experience line at '{exp['company'].title()}' contains unsupported tool claims."
+                        )
+                        exp_leak_detected = True
+                        break
+            if exp_leak_detected:
                 break
 
     if cover_text:

@@ -3,3 +3,5 @@ google-genai==1.56.0
 python-dotenv==1.2.2
 reportlab==4.4.7
 streamlit[pdf]==1.58.0
+psycopg2-binary>=2.9.9
+pypdf>=4.0.0

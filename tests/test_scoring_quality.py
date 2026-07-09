@@ -1,6 +1,11 @@
 from profile import get_profile
 from quality import audit_application_documents, build_ats_report
-from scoring import calculate_fit_score, flatten_profile_terms, has_term
+from scoring import (
+    application_recommendation,
+    calculate_fit_score,
+    flatten_profile_terms,
+    has_term,
+)
 
 
 def test_profile_aliases_cover_known_equivalent_terms():
@@ -76,6 +81,97 @@ def test_ats_report_excludes_generic_title_and_brand_language():
         "Software Development Engineer",
         "Customer obsession",
     ]
+
+
+def test_ats_report_keeps_airbus_context_terms_out_of_missing_gaps():
+    report = build_ats_report(
+        "\n".join(
+            [
+                "SKILLS",
+                "Python, Statistics, Data Wrangling, Data Preprocessing",
+                "Design of Experiments, Machine Learning, Deep Learning, Git",
+                "Software development best practices",
+                "Multidisciplinary analysis and optimization",
+                "OpenTurns",
+                "EDUCATION",
+                "B.Tech Computer Science and Engineering",
+            ]
+        ),
+        {
+            "skills": [
+                "Python",
+                "Statistics",
+                "Data Wrangling",
+                "Data Preprocessing",
+                "Design of Experiments",
+                "Machine Learning",
+                "Deep Learning",
+                "Software development best practices",
+                "Multidisciplinary analysis and optimization",
+                "Surrogate modeling",
+            ],
+            "tools": ["Git", "OpenTurns", "JohnDoE"],
+            "keywords": [
+                "Permanent",
+                "Professional",
+                "M.Sc.",
+                "M.Eng.",
+                "Computer Science",
+                "Data Engineering",
+                "Mathematics",
+                "Aerospace",
+                "High-Dimensional Constrained Design of Experiments",
+                "ML applications",
+                "Innovation Centre",
+                "Artificial Intelligence",
+                "Digital Engineering",
+            ],
+        },
+    )
+
+    assert "JohnDoE" in report["excluded_terms"]
+    assert "High-Dimensional Constrained Design of Experiments" not in report["missing_terms"]
+    assert report["missing_terms"] == ["Surrogate modeling"]
+    assert "Permanent" in report["context_terms"]
+    assert "M.Sc." in report["context_terms"]
+
+
+def test_ats_report_keeps_internship_context_out_of_missing_gaps():
+    report = build_ats_report(
+        "SKILLS\nPython, Machine Learning, Communication\nEDUCATION\nB.Tech Computer Science",
+        {
+            "skills": ["Python", "Machine Learning", "APIs"],
+            "tools": ["LangChain"],
+            "keywords": [
+                "Remote",
+                "6 months",
+                "Full-Time Internship",
+                "Bachelor's degree",
+                "Written Communication",
+                "Verbal Communication",
+                "Production-grade",
+            ],
+        },
+    )
+
+    assert report["missing_terms"] == ["APIs", "LangChain"]
+    assert "Remote" in report["context_terms"]
+    assert "Bachelor's degree" in report["context_terms"]
+    assert "Written Communication" in report["context_terms"]
+
+
+def test_application_recommendation_separates_action_from_fit_verdict():
+    assert application_recommendation(86, [], [], 0) == "Prioritize"
+    assert (
+        application_recommendation(
+            49,
+            ["LangChain", "LangGraph"],
+            ["CrewAI"],
+            0,
+        )
+        == "Apply with honest positioning"
+    )
+    assert application_recommendation(35, ["Python"], [], 0) == "Skip for now"
 
 
 def test_explicit_experience_requirement_reduces_fit_score():

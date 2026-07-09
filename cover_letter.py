@@ -4,7 +4,23 @@ import os
 import re
 import subprocess
 from datetime import date
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(path: str = ".env") -> None:
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
 from analyzer import analyze_job
 from profile import get_profile
 from matcher import match_profile_to_job
@@ -18,8 +34,11 @@ from utils import (
 )
 
 load_dotenv()
-client = get_llm_client()
-MODEL = get_llm_model()
+
+
+def llm_runtime():
+    """Returns the configured LLM client and model when generation is requested."""
+    return get_llm_client(), get_llm_model()
 
 
 def clean_cover_letter_style(text: str) -> str:
@@ -85,8 +104,11 @@ def unsupported_confirmed_claims(
     return violations
 
 
-def unsupported_profile_claims(text: str) -> list[str]:
-    """Finds known cross-project and internship evidence mix-ups."""
+def unsupported_profile_claims(text: str, profile: dict = None) -> list[str]:
+    """Finds known cross-project and internship evidence mix-ups dynamically."""
+    if profile is None:
+        profile = get_profile()
+        
     violations = []
     paragraphs = [
         paragraph.strip()
@@ -94,39 +116,80 @@ def unsupported_profile_claims(text: str) -> list[str]:
         if paragraph.strip()
     ]
 
+    # Dynamic grounding validation rules from profile projects
+    projects_data = []
+    for project in profile.get("projects", []):
+        name = project.get("name", "")
+        domain = project.get("domain", "")
+        metrics = project.get("grounding_metrics", [])
+        if not metrics:
+            continue
+        project_keywords = {name.lower(), domain.lower()}
+        project_keywords.update(t.lower() for t in project.get("tools", []))
+        project_keywords.update(w.lower() for w in re.findall(r"\b\w{3,}\b", name))
+        projects_data.append({
+            "name": name,
+            "metrics": [m.lower() for m in metrics],
+            "keywords": project_keywords
+        })
+
+    # Dynamic restricted experience validations
+    experience_data = []
+    for exp in profile.get("experience", []):
+        company = exp.get("company", "").lower()
+        title = exp.get("title", "").lower()
+        exp_text = (exp.get("description", "") + " " + " ".join(exp.get("highlights", []))).lower()
+        restricted_terms = [
+            "openai", "gemini", "llm api", "claude api", 
+            "prompt engineering", "agentic workflow", "agentic ai",
+            "rag", "production grade", "production-grade"
+        ]
+        experience_data.append({
+            "company": company,
+            "title": title,
+            "exp_text": exp_text,
+            "restricted_terms": [t for t in restricted_terms if t not in exp_text]
+        })
+
     for paragraph in paragraphs:
         lower = paragraph.lower()
-        medical_project = any(
-            marker in lower
-            for marker in (
-                "medical condition",
-                "drug review",
-                "tf idf",
-                "tf-idf",
-                "logistic regression",
-                "naive bayes",
-            )
-        )
-        face_project_metrics = (
-            "93.91%" in paragraph or "15,000" in paragraph
-        )
-        if medical_project and face_project_metrics:
+        
+        # Check cross-project metric leaks
+        leak_detected = False
+        for p_idx, p_current in enumerate(projects_data):
+            has_project_keywords = any(kw in lower for kw in p_current["keywords"])
+            if has_project_keywords:
+                for other_idx, p_other in enumerate(projects_data):
+                    if p_idx == other_idx:
+                        continue
+                    exclusive_other_metrics = [
+                        m for m in p_other["metrics"] 
+                        if m not in p_current["metrics"]
+                    ]
+                    if any(metric in lower for metric in exclusive_other_metrics):
+                        leak_detected = True
+                        break
+            if leak_detected:
+                break
+        if leak_detected:
             violations.append(paragraph)
             continue
 
-        internship_context = "internship" in lower or "skilldzire" in lower
-        unsupported_internship_tools = any(
-            marker in lower
-            for marker in (
-                "openai",
-                "gemini",
-                "llm api",
-                "claude api",
-                "prompt engineering",
-                "agentic workflow",
+        # Check experience restricted tool leaks
+        exp_leak_detected = False
+        for exp in experience_data:
+            if not exp["company"]:
+                continue
+            is_matching_exp = (
+                exp["company"] in lower 
+                or (len(exp["title"]) > 5 and exp["title"] in lower)
+                or ("internship" in lower and exp["company"] in lower)
             )
-        )
-        if internship_context and unsupported_internship_tools:
+            if is_matching_exp:
+                if any(term in lower for term in exp["restricted_terms"]):
+                    exp_leak_detected = True
+                    break
+        if exp_leak_detected:
             violations.append(paragraph)
 
     return violations
@@ -330,6 +393,7 @@ Education: {education_text}
 Publication: {pub_text}
 Permanent Skills: {permanent_skills}
 User-confirmed familiarity for this application only: {confirmed_terms}
+User-provided evidence/details for confirmed terms: {profile.get("_application_confirmed_details", {})}
 Evidence-backed Matched Skills: {evidence_matched_skills}
 Strongest Points: {match["strongest_points"]}
 Best Project: {best_project}
@@ -377,9 +441,10 @@ Sincerely,
 {profile["name"]}
 """
 
+    client, model = llm_runtime()
     response = create_message_with_retry(
         client,
-        model=MODEL,
+        model=model,
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -415,7 +480,7 @@ Return only the corrected cover letter.
 """
         response = create_message_with_retry(
             client,
-            model=MODEL,
+            model=model,
             max_tokens=800,
             messages=[{"role": "user", "content": correction_prompt}],
         )
