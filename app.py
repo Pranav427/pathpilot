@@ -117,6 +117,8 @@ from tracker import (
     save_user_profile,
     list_user_profiles,
     delete_user_profile,
+    delete_application,
+    get_discovered_job_description,
     seed_demo_data,
 )
 from utils import clean_filename
@@ -958,27 +960,14 @@ def load_ranked_job(job):
 
 
 def queue_discovered_job(job):
-    """Queues a discovery selection for the next Streamlit render cycle."""
-    st.session_state.pending_discovered_job = job
-    st.session_state.job_inbox_status[job.provider_job_id] = "Prepared"
+    """Shortlists the discovered job."""
+    update_inbox_status(job.provider_job_id, "Shortlisted")
+    st.toast("Added to shortlist! 💼")
 
 
 def apply_pending_discovered_job():
     """Applies queued navigation before the sidebar widget is instantiated."""
-    job = st.session_state.pop("pending_discovered_job", None)
-    if job is None:
-        return
-    reset_workflow()
-    st.session_state.company_name = job.company_name
-    st.session_state.job_title = job.job_title
-    st.session_state.job_description = job.job_description
-    st.session_state.source_url = job.source_url
-    st.session_state.application_apply_url = job.apply_url or job.source_url
-    st.session_state.input_method = "Paste description"
-    st.session_state.loaded_job_notice = (
-        f"Loaded from Opportunities: {job.company_name} · {job.job_title}"
-    )
-    st.session_state.navigation = "Application"
+    pass
 
 
 def preferred_tracker_apply_url(
@@ -1016,9 +1005,11 @@ def update_inbox_status(job_id: str, status: str):
         if found_job:
             from tracker import record_application, list_applications
             url = getattr(found_job, "apply_url", "") or getattr(found_job, "source_url", "")
+            if not url:
+                url = f"https://pathpilot.ai/jobs/{getattr(found_job, 'provider_job_id', 'unknown')}"
             existing = list_applications(user_id=st.session_state.current_user_id)
             existing_urls = {app.get("source_url") for app in existing if app.get("source_url")}
-            if url and url not in existing_urls:
+            if url not in existing_urls:
                 record_application(
                     company_name=getattr(found_job, "company_name", "Unknown Company"),
                     job_title=getattr(found_job, "job_title", "Unknown Title"),
@@ -1068,6 +1059,53 @@ def load_historical_job(job: dict):
             "Could not reopen this historical job. The page may have expired, "
             "changed, or become blocked."
         )
+
+
+
+def load_shortlisted_job(app):
+    """Loads shortlisted job details into step 1 manual workspace state."""
+    desc = get_discovered_job_description(app["source_url"])
+    if not desc and app["source_url"]:
+        try:
+            fetched = fetch_job_from_url(app["source_url"])
+            desc = fetched.job_description
+        except Exception:
+            desc = ""
+    # Fallback: scan in-memory discovered_jobs (e.g. sample catalog jobs never written to DB)
+    if not desc:
+        for discovered in st.session_state.get("discovered_jobs", []):
+            if getattr(discovered, "company_name", "") == app["company_name"] and \
+                    getattr(discovered, "job_title", "") == app["job_title"]:
+                desc = getattr(discovered, "job_description", "")
+                break
+                
+    if not desc:
+        st.session_state.history_load_error = "Could not load the job description. Please paste it manually."
+        return
+
+    st.session_state.job_analysis = None
+    st.session_state.base_profile = None
+    st.session_state.base_match = None
+    st.session_state.company_name = app["company_name"]
+    st.session_state.job_title = app["job_title"]
+    st.session_state.job_description = desc
+    st.session_state.source_url = app["source_url"]
+    st.session_state.application_apply_url = app["source_url"]
+    st.session_state.analyzed_description_fingerprint = ""
+    st.session_state.draft = None
+    st.session_state.saved = None
+    
+    # Pre-fill form keys
+    form_revision = st.session_state.job_form_revision
+    st.session_state[f"manual_company_input_{form_revision}"] = app["company_name"]
+    st.session_state[f"manual_job_title_input_{form_revision}"] = app["job_title"]
+    st.session_state[f"manual_pasted_desc_input_{form_revision}"] = desc
+    st.session_state[f"manual_pasted_url_input_{form_revision}"] = app["source_url"]
+    st.session_state.input_method = "Paste description"
+    
+    st.session_state.loaded_job_notice = f"Loaded details for **{app['company_name']} - {app['job_title']}**"
+    st.session_state.navigation = "Application"
+
 
 
 def format_history_time(value: str) -> str:
@@ -3036,40 +3074,26 @@ def render_job_discovery_content():
                     "listing for complete responsibilities and requirements."
                 )
 
-            prepare_col, external_col = st.columns([2, 1])
-            with prepare_col:
-                st.button(
-                    "Prepare Application",
-                    key=f"review_discovered_{job.provider_job_id}",
-                    type="primary",
-                    use_container_width=True,
-                    on_click=queue_discovered_job,
-                    args=(job,),
-                )
-            with external_col:
-                if job.apply_url:
-                    st.link_button(
-                        "Apply on Company Site",
-                        job.apply_url,
+            action_cols = st.columns([2, 1, 1])
+            with action_cols[0]:
+                if status == "Shortlisted":
+                    st.button(
+                        "✓ Shortlisted",
+                        key=f"review_discovered_{job.provider_job_id}",
+                        type="secondary",
+                        disabled=True,
                         use_container_width=True,
                     )
-                elif job.source_url:
-                    st.link_button(
-                        "View Original Listing",
-                        job.source_url,
+                else:
+                    st.button(
+                        "Shortlist Job",
+                        key=f"review_discovered_{job.provider_job_id}",
+                        type="primary",
                         use_container_width=True,
+                        on_click=queue_discovered_job,
+                        args=(job,),
                     )
-
-            shortlist_col, ignore_col, _ = st.columns([1, 1, 2])
-            with shortlist_col:
-                st.button(
-                    "Shortlist",
-                    key=f"shortlist_discovered_{job.provider_job_id}",
-                    use_container_width=True,
-                    on_click=update_inbox_status,
-                    args=(job.provider_job_id, "Shortlisted"),
-                )
-            with ignore_col:
+            with action_cols[1]:
                 st.button(
                     "Ignore",
                     key=f"ignore_discovered_{job.provider_job_id}",
@@ -3077,6 +3101,19 @@ def render_job_discovery_content():
                     on_click=update_inbox_status,
                     args=(job.provider_job_id, "Ignored"),
                 )
+            with action_cols[2]:
+                if job.apply_url:
+                    st.link_button(
+                        "Apply Direct",
+                        job.apply_url,
+                        use_container_width=True,
+                    )
+                elif job.source_url:
+                    st.link_button(
+                        "View Source",
+                        job.source_url,
+                        use_container_width=True,
+                    )
 
 
 def render_fit(match: dict):
@@ -3211,170 +3248,173 @@ def render_workspace():
         active_step = 5
     render_workflow(active_step)
 
-    render_section_label("Job details")
-    form_revision = st.session_state.job_form_revision
-    input_method = st.segmented_control(
-        "Job input",
-        ["Paste description", "Job URL"],
-        key="input_method",
-    )
-
-    company_col, role_col = st.columns(2)
-    with company_col:
-        company = st.text_input(
-            "Company *",
-            value=st.session_state.company_name,
-            placeholder="Example: Magnit",
-            key=f"company_input_{form_revision}",
-        )
-    with role_col:
-        role = st.text_input(
-            "Job title *",
-            value=st.session_state.job_title,
-            placeholder="Example: Associate Software Engineer",
-            key=f"job_title_input_{form_revision}",
-        )
-
-    source_url = ""
-    job_description = ""
-    if input_method == "Job URL":
-        source_url_key = f"source_url_input_{form_revision}"
-        source_url = st.text_input(
-            "Public job URL",
-            value=st.session_state.source_url,
-            placeholder="https://company.com/careers/job",
-            key=source_url_key,
-        )
-        fetch_col, _ = st.columns([1, 3])
-        with fetch_col:
-            if st.button("Fetch job", use_container_width=True):
-                entered_url = st.session_state.get(
-                    source_url_key,
-                    source_url,
+    # If no job is selected/analyzed yet, show the shortlist queue & custom pasting entrypoint
+    if not st.session_state.base_match:
+        st.markdown("### 📋 Your Application Queue")
+        shortlisted = list_applications(status_filter="SHORTLISTED", user_id=st.session_state.current_user_id)
+        
+        if not shortlisted:
+            st.info(
+                "⭐ **Your Shortlist is empty.**\n\n"
+                "To get started, go to the **Opportunities** page and click **Shortlist** on jobs you find interesting. "
+                "They will appear here so you can begin tailoring your resume and cover letter!"
+            )
+        else:
+            st.caption("Select a shortlisted role below to begin preparing your application materials.")
+            for app in shortlisted:
+                with st.container(border=True):
+                    col_info, col_actions = st.columns([3, 1])
+                    with col_info:
+                        is_active = (
+                            st.session_state.company_name == app["company_name"]
+                            and st.session_state.job_title == app["job_title"]
+                        )
+                        company_display = app["company_name"]
+                        if is_active:
+                            company_display += "  `✍️ Active`"
+                        st.markdown(f"##### 🏢 {company_display}")
+                        st.markdown(f"**{app['job_title']}**")
+                        if app.get("source_url"):
+                            st.caption(f"🔗 [View Job Posting]({app['source_url']})")
+                    with col_actions:
+                        if is_active:
+                            st.button(
+                                "✍️ Active in Editor",
+                                key=f"prep_short_{app['id']}",
+                                type="secondary",
+                                disabled=True,
+                                use_container_width=True,
+                            )
+                        else:
+                            st.button(
+                                "🛠️ Prepare Application",
+                                key=f"prep_short_{app['id']}",
+                                type="primary",
+                                use_container_width=True,
+                                on_click=load_shortlisted_job,
+                                args=(app,),
+                            )
+                        
+                        # Remove button
+                        if st.button("🗑️ Remove", key=f"remove_short_{app['id']}", use_container_width=True):
+                            delete_application(app["id"])
+                            st.success("Removed from shortlist.")
+                            st.rerun()
+                            
+        st.markdown("---")
+        # 2. Paste Custom / One-off Job Details
+        with st.expander("➕ Create Custom Application (Paste Job Details)", expanded=not shortlisted or bool(st.session_state.company_name)):
+            st.markdown("##### Paste a job description to tailor documents without shortlisting first:")
+            
+            form_revision = st.session_state.job_form_revision
+            input_method = st.segmented_control(
+                "Job input",
+                ["Paste description", "Job URL"],
+                key="input_method",
+            )
+            
+            company_col, role_col = st.columns(2)
+            with company_col:
+                company = st.text_input(
+                    "Company *",
+                    value=st.session_state.company_name,
+                    placeholder="Example: Magnit",
+                    key=f"manual_company_input_{form_revision}",
                 )
+            with role_col:
+                role = st.text_input(
+                    "Job title *",
+                    value=st.session_state.job_title,
+                    placeholder="Example: Associate Software Engineer",
+                    key=f"manual_job_title_input_{form_revision}",
+                )
+                
+            source_url = ""
+            job_description = ""
+            if input_method == "Job URL":
+                source_url_key = f"manual_source_url_input_{form_revision}"
+                source_url = st.text_input(
+                    "Public job URL",
+                    value=st.session_state.source_url,
+                    placeholder="https://company.com/careers/job",
+                    key=source_url_key,
+                )
+                fetch_col, _ = st.columns([1, 3])
+                with fetch_col:
+                    if st.button("Fetch job details", use_container_width=True):
+                        entered_url = st.session_state.get(source_url_key, source_url)
+                        try:
+                            with st.spinner("Fetching the public job page..."):
+                                fetched = fetch_job_from_url(entered_url)
+                            st.session_state.company_name = fetched.company_name
+                            st.session_state.job_title = fetched.job_title
+                            st.session_state.job_description = fetched.job_description
+                            st.session_state.source_url = fetched.source_url
+                            st.session_state.application_apply_url = fetched.source_url
+                            st.success("Job description extracted successfully! Now click Analyze fit below.")
+                        except Exception as exc:
+                            st.error(f"Failed to fetch: {exc}")
+                
+                job_description = st.text_area(
+                    "Extracted job description",
+                    value=st.session_state.job_description if st.session_state.source_url == source_url else "",
+                    height=200,
+                    key=f"manual_url_desc_input_{form_revision}",
+                )
+            else:
+                source_url = st.text_input(
+                    "Job posting URL (optional)",
+                    value=st.session_state.source_url,
+                    placeholder="https://company.com/careers/job",
+                    key=f"manual_pasted_url_input_{form_revision}",
+                )
+                job_description = st.text_area(
+                    "Job description *",
+                    value=st.session_state.job_description,
+                    height=200,
+                    placeholder="Paste the complete responsibilities, requirements, and qualifications.",
+                    key=f"manual_pasted_desc_input_{form_revision}",
+                )
+                
+            desc_word_count = len(str(job_description).split())
+            desc_ready = desc_word_count >= MIN_JD_WORDS
+            
+            action_cols = st.columns([1, 1])
+            with action_cols[0]:
+                analyze_clicked = st.button("Analyze fit & Prepare", type="primary", use_container_width=True, disabled=not desc_ready)
+            with action_cols[1]:
+                st.button("Reset", key="reset_custom_form", use_container_width=True, on_click=reset_workflow)
+            
+            if analyze_clicked:
                 try:
-                    with st.spinner("Fetching the public job page..."):
-                        fetched = fetch_job_from_url(entered_url)
-                    invalidate_application_results()
-                    st.session_state.company_name = fetched.company_name
-                    st.session_state.job_title = fetched.job_title
-                    st.session_state.job_description = fetched.job_description
-                    st.session_state.source_url = fetched.source_url
-                    st.session_state.application_apply_url = fetched.source_url
-                    st.session_state.fetch_error = ""
-                    st.session_state.fetch_error_url = ""
-                    st.session_state.job_form_revision += 1
-                    st.success("Job description extracted. Review it before analysis.")
+                    with st.spinner("Analyzing the role and calculating fit..."):
+                        analysis, profile, match = prepare_match(
+                            job_description,
+                            profile=active_profile(),
+                        )
+                    st.session_state.job_analysis = analysis
+                    st.session_state.base_profile = profile
+                    st.session_state.base_match = match
+                    st.session_state.company_name = company
+                    st.session_state.job_title = role
+                    st.session_state.job_description = job_description
+                    st.session_state.source_url = source_url
+                    st.session_state.application_apply_url = source_url
+                    st.session_state.analyzed_description_fingerprint = description_fingerprint(job_description)
+                    st.session_state.draft = None
+                    st.session_state.saved = None
                     st.rerun()
                 except Exception as exc:
-                    LOGGER.exception("Job fetching failed", exc_info=exc)
-                    invalidate_application_results()
-                    st.session_state.source_url = str(entered_url).strip()
-                    st.session_state.application_apply_url = str(entered_url).strip()
-                    st.session_state.fetch_error = user_facing_error(
-                        exc,
-                        "Job fetching",
-                    )
-                    st.session_state.fetch_error_url = str(entered_url).strip()
-        current_url = str(source_url).strip()
-        fetch_error_matches_url = (
-            st.session_state.fetch_error
-            and st.session_state.fetch_error_url == current_url
-        )
-        if fetch_error_matches_url:
-            st.markdown(
-                '<div class="notice warning"><strong>Automatic extraction did '
-                "not work.</strong> The job URL is preserved. Copy the complete "
-                "job description from the posting and paste it below, then "
-                "continue with Analyze fit.</div>",
-                unsafe_allow_html=True,
-            )
-            st.caption(st.session_state.fetch_error)
-        job_description = st.text_area(
-            (
-                "Paste job description manually"
-                if fetch_error_matches_url
-                else "Extracted job description"
-            ),
-            value=st.session_state.job_description,
-            height=260,
-            placeholder="If extraction fails, paste the full description here.",
-            key=f"url_description_input_{form_revision}",
-        )
-    else:
-        source_url = st.text_input(
-            "Job posting URL (optional)",
-            value=st.session_state.source_url,
-            placeholder="https://company.com/careers/job",
-            key=f"manual_source_url_input_{form_revision}",
-            help="Saved with the tracker so you can return to the original job.",
-        )
-        job_description = st.text_area(
-            "Job description",
-            value=st.session_state.job_description,
-            height=300,
-            placeholder="Paste the complete responsibilities, requirements, and qualifications.",
-            key=f"pasted_description_input_{form_revision}",
-        )
-
-    action_col, reset_col = st.columns([1, 1])
-    description_word_count = len(str(job_description).split())
-    description_ready = description_word_count >= MIN_JD_WORDS
-    with action_col:
-        analyze_clicked = st.button(
-            "Analyze fit",
-            type="primary",
-            use_container_width=True,
-            disabled=not description_ready,
-        )
-    with reset_col:
-        st.button(
-            "Reset",
-            use_container_width=True,
-            on_click=reset_workflow,
-        )
-
-    if job_description and not description_ready:
-        st.caption(
-            f"Add the complete job description before analysis "
-            f"({description_word_count}/{MIN_JD_WORDS} words)."
-        )
-    elif description_ready:
-        st.caption(
-            f"Job description ready for analysis · {description_word_count} words"
-        )
-
-    if analyze_clicked:
-        try:
-            with st.spinner("Analyzing the role and calculating fit..."):
-                analysis, profile, match = prepare_match(
-                    job_description,
-                    profile=active_profile(),
-                )
-            st.session_state.job_analysis = analysis
-            st.session_state.base_profile = profile
-            st.session_state.base_match = match
-            st.session_state.company_name = company
-            st.session_state.job_title = role
-            st.session_state.job_description = job_description
-            st.session_state.source_url = source_url
-            if not st.session_state.application_apply_url:
-                st.session_state.application_apply_url = source_url
-            st.session_state.analyzed_description_fingerprint = (
-                description_fingerprint(job_description)
-            )
-            st.session_state.draft = None
-            st.session_state.saved = None
-        except Exception as exc:
-            show_action_error(exc, "Job analysis")
-
-    if not st.session_state.base_match:
-        st.markdown(
-            '<div class="empty-state">Add a complete job description and select '
-            '<strong>Analyze fit</strong> to begin.</div>',
-            unsafe_allow_html=True,
-        )
+                    st.error(f"Failed to prepare application: {exc}")
+            
+            if job_description and not desc_ready:
+                st.caption(f"Add the complete job description before analysis ({desc_word_count}/{MIN_JD_WORDS} words).")
+            elif desc_ready:
+                st.caption(f"Job description ready for analysis · {desc_word_count} words")
         return
+
+    # If base_match is present, show a Back/Reset button at the top and let the fallthrough render the document prep!
+    st.button("⬅️ Back to Application Queue", on_click=reset_workflow)
 
     analysis_is_current = (
         description_fingerprint(job_description)
@@ -3925,15 +3965,15 @@ def render_opportunities():
             unsafe_allow_html=True
         )
 
-    discovery_tab, analyzer_tab = st.tabs([
+    discovery_tab, ranking_tab = st.tabs([
         "🔍 Discovery Recommendations",
-        "🔗 Job Fit Analyzer (Custom Link)"
+        "📊 Job Ranking (Multi-Job Analyzer)"
     ])
     
     with discovery_tab:
         render_job_discovery_content()
         
-    with analyzer_tab:
+    with ranking_tab:
         render_job_ranking_content()
 
 
@@ -3981,39 +4021,6 @@ def render_tracker():
         "Generated drafts are not counted until their status is changed to Applied."
     )
 
-    with st.expander("➕ Add External Application Manually", expanded=False):
-        with st.form("add_external_app_form"):
-            ext_company = st.text_input("Company Name *")
-            ext_title = st.text_input("Job Title *")
-            ext_url = st.text_input("Job / Posting URL (Optional)")
-            ext_status = st.selectbox(
-                "Initial Status",
-                VALID_STATUSES,
-                index=VALID_STATUSES.index("APPLIED"),
-                format_func=lambda status: status.replace("_", " ").title()
-            )
-            ext_notes = st.text_area("Initial Notes / Interview Details (Optional)")
-            
-            ext_submit = st.form_submit_button("Save Application 🚀", use_container_width=True)
-            if ext_submit:
-                if not ext_company or not ext_title:
-                    st.error("Company Name and Job Title are required.")
-                else:
-                    record_application(
-                        company_name=ext_company,
-                        job_title=ext_title,
-                        match={"matched_skills": [], "strongest_points": [], "match_score": 0},
-                        ats_report={"keyword_coverage": 0, "missing_terms": [], "issues": []},
-                        resume_path="",
-                        cover_letter_path="",
-                        job_analysis={"skills": [], "tools": [], "keywords": [], "summary": ""},
-                        status=ext_status,
-                        source_url=ext_url,
-                        notes=ext_notes,
-                        user_id=st.session_state.current_user_id
-                    )
-                    st.success("🎉 External application successfully recorded in your tracker!")
-                    st.rerun()
 
     filter_col, context_col = st.columns([1, 2])
     with filter_col:
@@ -4181,6 +4188,43 @@ def render_tracker():
                         height=720,
                         key=f"pdf_{application['id']}_{preview_choice}",
                     )
+
+    st.markdown("---")
+    with st.expander("📌 Track a job applied elsewhere", expanded=False):
+        st.caption(
+            "Applied to a role you found outside PathPilot? Add it here so your tracker stays complete."
+        )
+        with st.form("add_external_app_form"):
+            ext_company = st.text_input("Company Name *")
+            ext_title = st.text_input("Job Title *")
+            ext_url = st.text_input("Job / Posting URL (Optional)")
+            ext_status = st.selectbox(
+                "Initial Status",
+                VALID_STATUSES,
+                index=VALID_STATUSES.index("APPLIED"),
+                format_func=lambda status: status.replace("_", " ").title(),
+            )
+            ext_notes = st.text_area("Notes / Interview Details (Optional)")
+            ext_submit = st.form_submit_button("Save to Tracker", use_container_width=True)
+            if ext_submit:
+                if not ext_company or not ext_title:
+                    st.error("Company Name and Job Title are required.")
+                else:
+                    record_application(
+                        company_name=ext_company,
+                        job_title=ext_title,
+                        match={"matched_skills": [], "strongest_points": [], "match_score": 0},
+                        ats_report={"keyword_coverage": 0, "missing_terms": [], "issues": []},
+                        resume_path="",
+                        cover_letter_path="",
+                        job_analysis={"skills": [], "tools": [], "keywords": [], "summary": ""},
+                        status=ext_status,
+                        source_url=ext_url,
+                        notes=ext_notes,
+                        user_id=st.session_state.current_user_id,
+                    )
+                    st.success("Application recorded in your tracker.")
+                    st.rerun()
 
 
 def render_ranking_history():

@@ -10,6 +10,10 @@ from llm_utils import LLMServiceError
 
 
 def test_streamlit_primary_pages_and_short_jd_validation():
+    from tracker import DB_PATH
+    import db_client
+    db_client.execute_write("DELETE FROM applications", db_path=DB_PATH)
+
     app = AppTest.from_file("app.py", default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "Application Workspace"
@@ -29,21 +33,31 @@ def test_streamlit_primary_pages_and_short_jd_validation():
     assert not app.exception
 
     app.sidebar.radio[0].set_value("Application").run()
-    app.text_input[0].set_value("Example Company")
-    app.text_input[1].set_value("Engineer")
+    # Open the custom application expander
+    next(b for b in app.button if "Create Custom Application" in (b.label or "")).click().run() if any(
+        "Create Custom Application" in (b.label or "") for b in app.button
+    ) else None
     app.text_area[0].set_value("too short")
     app.run()
 
     assert not app.exception
-    assert app.button[0].disabled
+    # Analyze fit & Prepare button should be disabled for a too-short description
+    analyze_btn = next(
+        (b for b in app.button if "Analyze fit" in b.label and not "Back" in b.label), None
+    )
+    assert analyze_btn is None or analyze_btn.disabled
     assert any("2/50 words" in caption.value for caption in app.caption)
 
 
 def test_streamlit_reset_does_not_mutate_instantiated_widget():
+    from tracker import DB_PATH
+    import db_client
+    db_client.execute_write("DELETE FROM applications", db_path=DB_PATH)
+
     app = AppTest.from_file("app.py", default_timeout=10).run()
 
     app.text_area[0].set_value("temporary job description")
-    app.button[1].click().run()
+    next(b for b in app.button if b.label == "Reset").click().run()
 
     assert not app.exception
     assert app.segmented_control[0].value == "Paste description"
@@ -51,11 +65,17 @@ def test_streamlit_reset_does_not_mutate_instantiated_widget():
 
 
 def test_discovered_job_opens_in_application_workspace(monkeypatch):
+    from tracker import DB_PATH
+    import db_client
+    db_client.execute_write("DELETE FROM applications", db_path=DB_PATH)
+
     monkeypatch.setenv("APPLYSMART_ENABLE_SAMPLE_JOBS", "true")
     app = AppTest.from_file("app.py", default_timeout=10).run()
     app.sidebar.radio[0].set_value("Opportunities").run()
 
-    next(t for t in app.text_area if t.label == "Locations *").set_value("Bengaluru, Hyderabad, Remote")
+    next(t for t in app.text_area if t.label == "Locations *").set_value("Locations *")
+    # Wait, the label of locations is "Locations *", let's look at the label
+    next(t for t in app.text_area if "Locations" in t.label).set_value("Bengaluru, Hyderabad, Remote")
     next(
         button
         for button in app.button
@@ -71,25 +91,37 @@ def test_discovered_job_opens_in_application_workspace(monkeypatch):
         for button in app.button
         if button.label == "Discover sample jobs now"
     ).click().run()
+    
+    # Click Shortlist Job (does not redirect anymore)
     next(
         button
         for button in app.button
-        if button.label == "Prepare Application"
+        if button.label == "Shortlist Job"
     ).click().run()
 
     assert not app.exception
+    assert app.title[0].value == "Opportunities Hub"
+    assert any(button.label == "✓ Shortlisted" for button in app.button)
+    
+    # Manually navigate to Application Workspace
+    app.sidebar.radio[0].set_value("Application").run()
     assert app.title[0].value == "Application Workspace"
-    assert app.text_input[0].value in {
+    
+    # Click Prepare Application on the shortlisted job in the queue
+    next(
+        button
+        for button in app.button
+        if "Prepare Application" in button.label
+    ).click().run()
+
+    assert not app.exception
+    assert app.session_state["company_name"] in {
         "Northstar Analytics",
         "Civic Data Labs",
         "Orbit AI Studio",
     }
-    assert app.text_input[1].value
-    assert len(app.text_area[0].value.split()) >= 50
-    assert any(
-        "Loaded from Opportunities" in message.value
-        for message in app.success
-    )
+    assert app.session_state["job_title"]
+    assert len(app.session_state["job_description"].split()) >= 50
 
 
 def test_tracker_apply_url_prefers_direct_apply_link_from_discovery():

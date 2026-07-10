@@ -354,6 +354,43 @@ def record_application(
         if existing and existing[0][0] >= 2:
             return 999999
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    if source_url:
+        existing = db_client.execute_query(
+            "SELECT id FROM applications WHERE user_id = ? AND source_url = ? AND status = 'SHORTLISTED' LIMIT 1",
+            (user_id, source_url),
+            db_path=db_path
+        )
+        if existing:
+            row_id = existing[0]["id"]
+            db_client.execute_write(
+                """
+                UPDATE applications SET
+                    company_name = ?, job_title = ?, status = ?,
+                    match_score = ?, ats_score = ?,
+                    resume_path = ?, cover_letter_path = ?, notes = ?,
+                    job_analysis_json = ?, match_json = ?, ats_report_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    company_name,
+                    job_title,
+                    status,
+                    int(match.get("match_score", 0)),
+                    int(ats_report.get("keyword_coverage", 0)),
+                    resume_path,
+                    cover_letter_path,
+                    notes,
+                    json.dumps(job_analysis, ensure_ascii=False),
+                    json.dumps(match, ensure_ascii=False),
+                    json.dumps(ats_report, ensure_ascii=False),
+                    now,
+                    row_id
+                ),
+                db_path=db_path
+            )
+            return row_id
+
     val = db_client.execute_write(
         """
         INSERT INTO applications (
@@ -712,59 +749,99 @@ def interactive_menu():
 
 
 def seed_demo_data(user_id: int, db_path: str = DB_PATH) -> None:
-    """Seeds the database with mock jobs, runs, and applications for Demo Mode if empty."""
+    """Seeds the database with mock jobs, runs, and applications for Demo Mode."""
     init_db(db_path)
     
-    # Check if applications table is empty for this user
-    apps = db_client.execute_query(
-        "SELECT id FROM applications WHERE user_id = ?",
+    # Always clear existing demo data to ensure a clean refresh
+    db_client.execute_write(
+        "DELETE FROM ranked_jobs WHERE search_run_id IN (SELECT id FROM job_search_runs WHERE user_id = ?)",
         (user_id,),
         db_path=db_path
     )
-    if not apps:
-        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-        # Seed applications (tracker)
-        db_client.execute_write(
-            """INSERT INTO applications 
-            (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("Alpha AI", "Software Development Engineer (Intern)", "SHORTLISTED", 94, 85, 
-             "Direct outreach sent to hiring manager on LinkedIn.", now, now, user_id),
-            db_path=db_path
-        )
-        db_client.execute_write(
-            """INSERT INTO applications 
-            (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("Northstar Analytics", "Data Scientist", "DRAFT_GENERATED", 78, 70, 
-             "Tailored resume and cover letter generated. Reviewing details.", now, now, user_id),
-            db_path=db_path
-        )
+    db_client.execute_write(
+        "DELETE FROM job_search_runs WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    db_client.execute_write(
+        "DELETE FROM applications WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    db_client.execute_write(
+        "DELETE FROM discovered_jobs WHERE user_id = ?",
+        (user_id,),
+        db_path=db_path
+    )
+    
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    # Seed applications (tracker)
+    db_client.execute_write(
+        """INSERT INTO applications 
+        (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("Alpha AI", "Software Development Engineer (Intern)", "SHORTLISTED", 94, 85, 
+         "Direct outreach sent to hiring manager on LinkedIn.", now, now, user_id),
+        db_path=db_path
+    )
+    db_client.execute_write(
+        """INSERT INTO applications 
+        (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("Northstar Analytics", "Data Scientist", "DRAFT_GENERATED", 78, 70, 
+         "Tailored resume and cover letter generated. Reviewing details.", now, now, user_id),
+        db_path=db_path
+    )
         
-    # Check if discovered_jobs is empty
-    jobs = db_client.execute_query(
-        "SELECT id FROM discovered_jobs WHERE user_id = ?",
-        (user_id,),
+    db_client.execute_write(
+        """INSERT OR IGNORE INTO discovered_jobs 
+        (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("demo-1", "Sample catalog", "Alpha AI", "Software Development Engineer (Intern)", "Remote", "Remote", "Full-time", "Internship", now,
+         "Software Development Engineer (Associate/Intern) Location: Remote (India preferred) | Type: Full-time | Compensation: Competitive salary early-stage stock options About Alpha Modern revenue teams juggle 10 point-solutions. Alpha unifies them into an agent-powered platform that plans, executes, and optimises GTM campaigns—so every touch happens on the right channel, at the right time, with the right context. Alpha is building the world's most intuitive AI stack for revenue teams — to engage, co-pilot, and convert. The Role As an early engineer, you will work directly with the founders to build our core orchestration engine, implement LLM agents, design high-throughput data pipelines, and craft responsive user experiences. Requirements: Strong Python and Javascript coding skills, familiarity with API integration, SQL databases, and streamlit or modern frontend frameworks. Prior experience with LLMs/AI prompt engineering is a plus.", now, now, user_id),
         db_path=db_path
     )
-    if not jobs:
-        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-        db_client.execute_write(
-            """INSERT OR IGNORE INTO discovered_jobs 
-            (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("demo-1", "Sample catalog", "Alpha AI", "Software Development Engineer (Intern)", "Remote", "Remote", "Full-time", "Internship", now,
-             "Software Development Engineer (Associate/Intern) Location: Remote (India preferred) | Type: Full-time | Compensation: Competitive salary early-stage stock options About Alpha Modern revenue teams juggle 10 point-solutions. Alpha unifies them into an agent-powered platform that plans, executes, and optimises GTM campaigns—so every touch happens on the right channel, at the right time, with the right context. Alpha is building the world's most intuitive AI stack for revenue teams — to engage, co-pilot, and convert. The Role As an early engineer, you will work directly with the founders to build our core orchestration engine, implement LLM agents, design high-throughput data pipelines, and craft responsive user experiences. Requirements: Strong Python and Javascript coding skills, familiarity with API integration, SQL databases, and streamlit or modern frontend frameworks. Prior experience with LLMs/AI prompt engineering is a plus.", now, now, user_id),
+    db_client.execute_write(
+        """INSERT OR IGNORE INTO discovered_jobs 
+        (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("demo-2", "Sample catalog", "Northstar Analytics", "Data Scientist", "Bengaluru", "Hybrid", "Full-time", "Fresher / Entry level", now,
+         "Northstar Analytics is hiring a Data Scientist to build predictive analytics models for supply chain optimization. Requirements: Python, pandas, scikit-learn, SQL, and experience with statistical analysis. Bengaluru location.", now, now, user_id),
+        db_path=db_path
+    )
+
+
+def get_discovered_job_description(url: str, db_path: str = DB_PATH) -> str:
+    """Retrieves the full job description from the local discovered_jobs catalog by its source URL or provider_job_id."""
+    if not url:
+        return ""
+    provider_job_id = ""
+    if "pathpilot.ai/jobs/" in url:
+        provider_job_id = url.split("pathpilot.ai/jobs/")[-1]
+
+    if provider_job_id:
+        rows = db_client.execute_query(
+            "SELECT job_description FROM discovered_jobs WHERE provider_job_id = ? LIMIT 1",
+            (provider_job_id,),
             db_path=db_path
         )
-        db_client.execute_write(
-            """INSERT OR IGNORE INTO discovered_jobs 
-            (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("demo-2", "Sample catalog", "Northstar Analytics", "Data Scientist", "Bengaluru", "Hybrid", "Full-time", "Fresher / Entry level", now,
-             "Northstar Analytics is hiring a Data Scientist to build predictive analytics models for supply chain optimization. Requirements: Python, pandas, scikit-learn, SQL, and experience with statistical analysis. Bengaluru location.", now, now, user_id),
+    else:
+        rows = db_client.execute_query(
+            "SELECT job_description FROM discovered_jobs WHERE source_url = ? OR apply_url = ? LIMIT 1",
+            (url, url),
             db_path=db_path
         )
+    return rows[0]["job_description"] if rows else ""
+
+
+def delete_application(application_id: int, db_path: str = DB_PATH) -> None:
+    """Deletes an application by ID from the applications table."""
+    init_db(db_path)
+    db_client.execute_write(
+        "DELETE FROM applications WHERE id = ?",
+        (application_id,),
+        db_path=db_path
+    )
 
 
 if __name__ == "__main__":

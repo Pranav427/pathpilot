@@ -12,7 +12,7 @@ PROVIDER_SETTINGS = {
         "api_key_env": "GEMINI_API_KEY",
         "placeholder": "your_gemini_api_key",
         "model_env": "GEMINI_MODEL",
-        "default_model": "gemini-2.5-flash",
+        "default_model": "gemini-2.0-flash",
     },
     "anthropic": {
         "api_key_env": "ANTHROPIC_API_KEY",
