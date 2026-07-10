@@ -126,6 +126,7 @@ from utils import clean_filename
 MAX_BATCH_URLS = 10
 LOGGER = logging.getLogger(__name__)
 
+# Streamlit setup configuration
 st.set_page_config(
     page_title=PRODUCT_NAME,
     page_icon="PP",
