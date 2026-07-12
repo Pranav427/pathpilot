@@ -1836,6 +1836,7 @@ def render_profile():
             if st.button("Discover Jobs ➔", type="primary", use_container_width=True, key="btn_onb_discover"):
                 st.session_state.onboarding_step = 1
                 st.session_state.onboarding_temp_profile = None
+                st.session_state.navigation = "Opportunities"
                 st.rerun()
             return
 
@@ -2234,7 +2235,8 @@ def render_profile():
                 
                 save_user_profile(st.session_state.current_user_id, updated_profile, st.session_state.current_persona_name)
                 st.session_state.session_profile = updated_profile
-                st.success("Profile saved successfully to your account!")
+                st.session_state.navigation = "Opportunities"
+                st.success("Profile saved successfully! Redirecting to Opportunities...")
                 st.rerun()
 
         profile = active_profile()
