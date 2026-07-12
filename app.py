@@ -2336,25 +2336,19 @@ def render_job_discovery_content():
             experience_levels = st.multiselect(
                 "Experience level *",
                 EXPERIENCE_LEVELS,
-                default=current.get(
-                    "experience_levels",
-                    ["Internship", "Fresher / Entry level"],
-                ),
+                default=[val for val in current.get("experience_levels", []) if val in EXPERIENCE_LEVELS] or ["Internship", "Fresher / Entry level"],
             )
         with mode_col:
             work_modes = st.multiselect(
                 "Work mode *",
                 WORK_MODES,
-                default=current.get("work_modes", list(WORK_MODES)),
+                default=[val for val in current.get("work_modes", []) if val in WORK_MODES] or list(WORK_MODES),
             )
         with type_col:
             job_types = st.multiselect(
                 "Job type *",
                 JOB_TYPES,
-                default=current.get(
-                    "job_types",
-                    ["Full-time", "Internship"],
-                ),
+                default=[val for val in current.get("job_types", []) if val in JOB_TYPES] or ["Full-time", "Internship"],
             )
 
         skills_col, exclude_col = st.columns(2)
