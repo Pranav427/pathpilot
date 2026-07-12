@@ -55,6 +55,10 @@ SERPAPI_API_KEY_ENV = "SERPAPI_API_KEY"
 SERPAPI_API_ROOT = "https://serpapi.com/search.json"
 SERPAPI_MAX_QUERIES = 32
 SERPAPI_CACHE_TTL_SECONDS = 15 * 60
+SEARCHAPI_API_KEY_ENV = "SEARCHAPI_API_KEY"
+SEARCHAPI_API_ROOT = "https://www.searchapi.io/api/v1/search"
+SEARCHAPI_MAX_QUERIES = 32
+SEARCHAPI_CACHE_TTL_SECONDS = 15 * 60
 DISCOVERY_INVENTORY_WINDOW_DAYS_ENV = "APPLYSMART_JOB_INVENTORY_WINDOW_DAYS"
 DEFAULT_DISCOVERY_INVENTORY_WINDOW_DAYS = 90
 ADZUNA_APP_ID_ENV = "ADZUNA_APP_ID"
@@ -71,6 +75,7 @@ _REMOTIVE_CACHE: dict[tuple, tuple[float, list["DiscoveredJob"]]] = {}
 _ARBEITNOW_CACHE: dict[tuple, tuple[float, list["DiscoveredJob"]]] = {}
 _REMOTEOK_CACHE: dict[tuple, tuple[float, list["DiscoveredJob"]]] = {}
 _SERPAPI_CACHE: dict[tuple, tuple[float, list["DiscoveredJob"]]] = {}
+_SEARCHAPI_CACHE: dict[tuple, tuple[float, list["DiscoveredJob"]]] = {}
 DEFAULT_DISCOVERY_LIMIT = 50
 LIVE_PROVIDER_TIMEOUT_SECONDS = 5
 BROAD_PROVIDER_TIMEOUT_SECONDS = 6
@@ -204,6 +209,7 @@ def clear_discovery_provider_caches() -> None:
     _ARBEITNOW_CACHE.clear()
     _REMOTEOK_CACHE.clear()
     _SERPAPI_CACHE.clear()
+    _SEARCHAPI_CACHE.clear()
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -334,6 +340,16 @@ def jooble_is_configured() -> bool:
 def serpapi_is_configured() -> bool:
     """Returns whether Google Jobs via SerpAPI can be used."""
     return bool(os.getenv(SERPAPI_API_KEY_ENV, "").strip())
+
+
+def searchapi_is_configured() -> bool:
+    """Returns whether Google Jobs via SearchAPI can be used."""
+    return bool(os.getenv(SEARCHAPI_API_KEY_ENV, "").strip())
+
+
+def google_jobs_is_configured() -> bool:
+    """Returns whether Google Jobs search is enabled via either SerpAPI or SearchAPI."""
+    return serpapi_is_configured() or searchapi_is_configured()
 
 
 def expanded_market_locations(locations: list[str]) -> list[str]:
@@ -2035,6 +2051,172 @@ class SerpApiGoogleJobsProvider:
             )
         if self.cache_enabled and jobs:
             _SERPAPI_CACHE[cache_key] = (time.monotonic(), list(jobs))
+        return jobs
+
+
+class SearchApiGoogleJobsProvider:
+    """Searches Google Jobs via SearchApi.io for platform and company listings."""
+
+    name = "Google Jobs via SearchApi"
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        timeout: int = BROAD_PROVIDER_TIMEOUT_SECONDS,
+        opener=urlopen,
+        max_queries: int = SEARCHAPI_MAX_QUERIES,
+        max_workers: int = BROAD_SEARCH_MAX_WORKERS,
+    ):
+        if not str(api_key).strip():
+            raise ValueError("Configure SEARCHAPI_API_KEY.")
+        self.api_key = str(api_key).strip()
+        self.timeout = timeout
+        self.opener = opener
+        self.max_queries = max(1, int(max_queries))
+        self.max_workers = max(1, int(max_workers))
+        self.cache_enabled = opener is urlopen
+        self.failures: list[str] = []
+
+    def _fetch_role_location(
+        self,
+        role: str,
+        location: str,
+        preferences: JobPreferences,
+    ) -> list[DiscoveredJob]:
+        params = urlencode(
+            {
+                "engine": "google_jobs",
+                "q": role,
+                "location": location or "India",
+                "hl": "en",
+                "api_key": self.api_key,
+            }
+        )
+        url = f"{SEARCHAPI_API_ROOT}?{params}"
+        request = Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "PathPilot/1.0",
+            },
+        )
+        try:
+            with self.opener(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise JobDiscoveryError(
+                f"Google Jobs SearchApi returned HTTP {exc.code}."
+            ) from exc
+        except (URLError, TimeoutError, IncompleteRead) as exc:
+            raise JobDiscoveryError(
+                "Google Jobs SearchApi could not be reached."
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise JobDiscoveryError(
+                "Google Jobs SearchApi returned an invalid response."
+            ) from exc
+
+        if isinstance(payload, dict) and payload.get("error"):
+            raise JobDiscoveryError(f"Google Jobs SearchApi error: {payload['error']}")
+
+        raw_jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+        jobs = []
+        for item in raw_jobs:
+            description = html_to_text(item.get("description", ""))
+            if len(description.split()) < 20:
+                continue
+            title = str(item.get("title", "")).strip()
+            job_location = str(item.get("location") or location or "India").strip()
+            company = str(item.get("company_name") or "Unknown").strip() or "Unknown"
+            detected = item.get("detected_extensions") or {}
+            extensions = item.get("extensions") or []
+            posted_date, freshness_verified = parse_google_jobs_posted_at(
+                detected.get("posted_at") or next(
+                    (
+                        extension
+                        for extension in extensions
+                        if "ago" in str(extension).lower()
+                        or str(extension).lower() in {"today", "yesterday"}
+                    ),
+                    "",
+                )
+            )
+            source_url = str(item.get("sharing_link") or "").strip()
+            apply_links = item.get("apply_links") or []
+            apply_url = ""
+            if apply_links and isinstance(apply_links[0], dict):
+                apply_url = str(apply_links[0].get("link") or "").strip()
+            elif item.get("apply_link"):
+                apply_url = str(item.get("apply_link")).strip()
+            via = str(item.get("via") or "Google Jobs").replace("via ", "").strip()
+            schedule = str(detected.get("schedule") or " ".join(extensions))
+            metadata = infer_discovery_metadata(
+                title,
+                description,
+                job_location,
+            )
+            job_type = lever_job_type(schedule, title) or metadata["job_type"]
+            jobs.append(
+                DiscoveredJob(
+                    provider_job_id=f"searchapi-{item.get('job_id') or source_url or apply_url}",
+                    source=f"Google Jobs · {via}",
+                    company_name=company,
+                    job_title=title,
+                    location=job_location,
+                    work_mode=(
+                        "Remote"
+                        if detected.get("work_from_home")
+                        else metadata["work_mode"]
+                    ),
+                    job_type=job_type,
+                    experience_level=(
+                        "Internship"
+                        if job_type == "Internship"
+                        else metadata["experience_level"]
+                    ),
+                    posted_date=posted_date,
+                    job_description=description,
+                    date_label="Posted" if freshness_verified else "Active listing",
+                    freshness_verified=freshness_verified,
+                    source_url=source_url or apply_url,
+                    apply_url=apply_url or source_url,
+                )
+            )
+        return jobs
+
+    def discover(self, preferences: JobPreferences) -> list[DiscoveredJob]:
+        """Searches Google Jobs role/location combinations via SearchApi."""
+        self.failures = []
+        queries = interleaved_role_location_queries(
+            preferences.target_roles,
+            preferences.locations,
+            limit=self.max_queries,
+            preferences=preferences,
+        )
+        cache_key = (tuple(queries), preferences.maximum_job_age_days, self.max_queries)
+        cached = _SEARCHAPI_CACHE.get(cache_key) if self.cache_enabled else None
+        if cached and time.monotonic() - cached[0] < SEARCHAPI_CACHE_TTL_SECONDS:
+            return list(cached[1])
+        jobs, self.failures = collect_parallel(
+            queries,
+            lambda query: self._fetch_role_location(
+                query[0],
+                query[1],
+                preferences,
+            ),
+            max_workers=self.max_workers,
+            failure_label=lambda query: (
+                f"Google Jobs {query[0]} / {query[1] or 'India'}"
+            ),
+        )
+        if self.failures and not jobs:
+            raise JobDiscoveryError(
+                "No Google Jobs SearchApi searches could be loaded. "
+                + " ".join(self.failures)
+            )
+        if self.cache_enabled and jobs:
+            _SEARCHAPI_CACHE[cache_key] = (time.monotonic(), list(jobs))
         return jobs
 
 

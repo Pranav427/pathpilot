@@ -66,6 +66,7 @@ from job_discovery import (
     JoobleJobProvider,
     LeverJobProvider,
     LocalSampleJobProvider,
+    SearchApiGoogleJobsProvider,
     SerpApiGoogleJobsProvider,
     TARGET_DISCOVERY_RESULTS,
     clear_discovery_provider_caches,
@@ -79,6 +80,8 @@ from job_discovery import (
     parse_greenhouse_boards,
     parse_lever_sites,
     serpapi_is_configured,
+    searchapi_is_configured,
+    google_jobs_is_configured,
 )
 from job_search import (
     action_label,
@@ -2460,7 +2463,8 @@ def render_job_discovery_content():
     jooble_country = os.getenv("JOOBLE_COUNTRY", "in").strip().lower()
     jooble_configured = jooble_is_configured()
     serpapi_api_key = os.getenv("SERPAPI_API_KEY", "").strip()
-    serpapi_configured = serpapi_is_configured()
+    searchapi_api_key = os.getenv("SEARCHAPI_API_KEY", "").strip()
+    google_jobs_configured = google_jobs_is_configured()
     early_career_sources_configured = early_career_sources_enabled()
     sample_jobs_enabled = os.getenv(
         "APPLYSMART_ENABLE_SAMPLE_JOBS",
@@ -2479,7 +2483,7 @@ def render_job_discovery_content():
         source_options.append("Broad Adzuna search")
     if jooble_configured:
         source_options.append("Broad Jooble search")
-    if serpapi_configured:
+    if google_jobs_configured:
         source_options.append("Google Jobs search")
     live_source_count = sum(
         bool(value)
@@ -2490,7 +2494,7 @@ def render_job_discovery_content():
             early_career_sources_configured,
             adzuna_configured,
             jooble_configured,
-            serpapi_configured,
+            google_jobs_configured,
         )
     )
     if live_source_count > 1:
@@ -2586,13 +2590,22 @@ def render_job_discovery_content():
         discover_label = "Search broad job market"
         spinner_label = "Searching Jooble for target roles..."
     elif source == "Google Jobs search":
-        st.success(
-            f"Google Jobs search is enabled through SerpAPI. {PRODUCT_NAME} "
-            "queries role and location combinations, then normalizes postings "
-            "from major platforms and company pages into the same ranking "
-            "pipeline."
-        )
-        provider = SerpApiGoogleJobsProvider(serpapi_api_key)
+        if searchapi_is_configured():
+            st.success(
+                f"Google Jobs search is enabled through SearchApi.io. {PRODUCT_NAME} "
+                "queries role and location combinations, then normalizes postings "
+                "from major platforms and company pages into the same ranking "
+                "pipeline."
+            )
+            provider = SearchApiGoogleJobsProvider(searchapi_api_key)
+        else:
+            st.success(
+                f"Google Jobs search is enabled through SerpAPI. {PRODUCT_NAME} "
+                "queries role and location combinations, then normalizes postings "
+                "from major platforms and company pages into the same ranking "
+                "pipeline."
+            )
+            provider = SerpApiGoogleJobsProvider(serpapi_api_key)
         discover_label = "Search Google Jobs"
         spinner_label = "Searching Google Jobs for target roles..."
     elif source == "All live sources":
@@ -2624,8 +2637,11 @@ def render_job_discovery_content():
                     country=jooble_country,
                 )
             )
-        if serpapi_configured:
-            live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
+        if google_jobs_configured:
+            if searchapi_is_configured():
+                live_providers.append(SearchApiGoogleJobsProvider(searchapi_api_key))
+            else:
+                live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
         provider = CombinedJobProvider(live_providers)
         discover_label = "Discover from all live sources"
         spinner_label = "Loading configured live job sources..."
@@ -2672,18 +2688,19 @@ def render_job_discovery_content():
         )
     if (
         source in {"Google Jobs search", "All live sources"}
-        and serpapi_configured
+        and google_jobs_configured
     ):
+        provider_name = "SearchApi.io" if searchapi_is_configured() else "SerpAPI"
+        provider_url = "https://www.searchapi.io/google-jobs-api" if searchapi_is_configured() else "https://serpapi.com/google-jobs-api"
         st.caption(
-            "Google Jobs results are provided through "
-            "[SerpAPI](https://serpapi.com/google-jobs-api) and may include "
+            f"Google Jobs results are provided through [{provider_name}]({provider_url}) and may include "
             "listings from LinkedIn, Naukri, Indeed, and company career pages "
             "when Google exposes them for the query."
         )
-    if source == "All live sources" and not serpapi_configured:
+    if source == "All live sources" and not google_jobs_configured:
         st.info(
             "High-coverage Google Jobs search is not configured yet. Add "
-            "SERPAPI_API_KEY to enable discovery from Google Jobs results, "
+            "SEARCHAPI_API_KEY or SERPAPI_API_KEY to enable discovery from Google Jobs results, "
             "including listings Google exposes from LinkedIn, Naukri, Indeed, "
             "and company career pages."
         )
