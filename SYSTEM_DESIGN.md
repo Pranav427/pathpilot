@@ -72,7 +72,7 @@ Ready to Apply
 * **`job_fetcher.py`**: Fetches job postings from public URLs.
 * **`job_search.py`**: Orchestrates multi-URL ingestion, fit-scoring, and ranking.
 * **`job_preferences.py`**: Manages search filters (roles, locations, work modes, exclusions).
-* **`job_discovery.py` & `job_store.py`**: Connectors for ATS feeds (Greenhouse, Lever, Ashby) and fallback search APIs.
+* **`job_discovery.py` & `job_store.py`**: Connectors for ATS feeds (Greenhouse, Lever, Ashby), market search APIs (Adzuna, Jooble), and a unified Google Jobs search interface supporting SearchApi.io and SerpAPI.
 * **`analyzer.py`**: Parses raw job text using structured AI models.
 * **`matcher.py` & `scoring.py`**: Measures candidate-to-job fit and calculates deterministic scores with keyword alias matching and seniority penalties.
 * **`resume.py` & `cover_letter.py`**: Tailors documents using LaTeX (with a pure-Python ReportLab fallback).

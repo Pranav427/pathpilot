@@ -237,6 +237,18 @@ providers. This improves coverage when Adzuna or direct company feeds are thin,
 but every listing should still be opened and verified before preparing an
 application.
 
+For Google Jobs search, PathPilot supports a unified **Google Jobs search** option. You can configure either SearchApi.io (preferred) or SerpAPI:
+
+```env
+# Optional SearchApi.io (preferred)
+SEARCHAPI_API_KEY=your_searchapi_key
+
+# Optional SerpAPI
+SERPAPI_API_KEY=your_serpapi_key
+```
+
+When either key is configured, the unified "Google Jobs search" option appears in the discovery options panel. The app automatically routes search queries to the configured provider at runtime.
+
 The fictional sample catalog is hidden from normal users. Developers may
 enable it explicitly for offline workflow testing:
 
