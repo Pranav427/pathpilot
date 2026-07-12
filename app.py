@@ -3505,7 +3505,7 @@ def render_workspace():
         )
     identity_error = ""
     try:
-        validate_application_identity(company, role)
+        validate_application_identity(st.session_state.company_name, st.session_state.job_title)
     except ValueError as exc:
         identity_error = str(exc)
         st.caption(identity_error)
@@ -3524,11 +3524,11 @@ def render_workspace():
         try:
             with st.spinner("Generating grounded application materials..."):
                 draft = generate_application_draft(
-                    company_name=company,
-                    job_title=role,
-                    job_description=job_description,
+                    company_name=st.session_state.company_name,
+                    job_title=st.session_state.job_title,
+                    job_description=st.session_state.job_description,
                     tone=tone,
-                    source_url=tracker_apply_url(source_url),
+                    source_url=tracker_apply_url(st.session_state.source_url),
                     confirmed_terms=confirmed,
                     job_analysis=st.session_state.job_analysis,
                     profile=st.session_state.base_profile,
