@@ -752,6 +752,40 @@ def seed_demo_data(user_id: int, db_path: str = DB_PATH) -> None:
     """Seeds the database with mock jobs, runs, and applications for Demo Mode (clearing any old data)."""
     init_db(db_path)
     
+    # Delete generated physical PDF and text files before removing records
+    try:
+        apps = db_client.execute_query(
+            "SELECT resume_path, cover_letter_path FROM applications WHERE user_id = ?",
+            (user_id,),
+            db_path=db_path
+        )
+        for app in apps:
+            for key in ("resume_path", "cover_letter_path"):
+                path = app.get(key)
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    try:
+        runs = db_client.execute_query(
+            "SELECT report_path FROM job_search_runs WHERE user_id = ?",
+            (user_id,),
+            db_path=db_path
+        )
+        for run in runs:
+            path = run.get("report_path")
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # Always clear existing demo data to ensure a clean refresh
     db_client.execute_write(
         "DELETE FROM ranked_jobs WHERE search_run_id IN (SELECT id FROM job_search_runs WHERE user_id = ?)",
