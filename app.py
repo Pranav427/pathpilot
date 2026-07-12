@@ -263,44 +263,77 @@ def apply_styles():
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap');
+
         :root {
-            --ink: #18212a;
-            --muted: #66727d;
-            --line: #dfe4e8;
+            --ink: #0f172a;
+            --muted: #64748b;
+            --line: #e2e8f0;
             --surface: #ffffff;
-            --soft: #f4f6f7;
-            --green: #126447;
-            --green-soft: #e9f4ef;
-            --amber: #986b14;
-            --amber-soft: #fff6dd;
-            --red: #a13c35;
-            --red-soft: #fff0ee;
-            --blue: #245b8a;
-            --blue-soft: #edf4fa;
+            --soft: #f8fafc;
+            --green: #0f766e;
+            --green-soft: #f0fdfa;
+            --amber: #b45309;
+            --amber-soft: #fef3c7;
+            --red: #be123c;
+            --red-soft: #fff1f2;
+            --blue: #1d4ed8;
+            --blue-soft: #eff6ff;
+            --brand: #2563eb;
         }
 
         .stApp {
-            background: #f6f8f9;
+            background: #f8fafc;
             color: var(--ink);
+            font-family: 'Inter', sans-serif !important;
         }
 
+        /* Sidebar Navigation Menu */
         [data-testid="stSidebar"] {
-            background: #f0f3f4;
+            background: #f1f5f9;
             border-right: 1px solid var(--line);
         }
 
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
             font-size: 1.2rem;
-            margin-bottom: 0;
+            margin-bottom: 0.5rem;
+            font-family: 'Outfit', sans-serif !important;
+            font-weight: 700;
         }
 
         [data-testid="stSidebar"] [role="radiogroup"] {
-            gap: 0.25rem;
+            gap: 0.35rem;
+        }
+
+        /* Hide the native radio button circle indicators in the sidebar navigation */
+        [data-testid="stSidebar"] [role="radiogroup"] label div:first-child {
+            display: none !important;
+        }
+
+        [data-testid="stSidebar"] [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+            display: block !important;
         }
 
         [data-testid="stSidebar"] [role="radiogroup"] label {
-            padding: 0.45rem 0.55rem;
-            border-radius: 4px;
+            padding: 0.65rem 0.85rem !important;
+            border-radius: 8px !important;
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            transition: all 0.2s ease !important;
+            cursor: pointer !important;
+            margin-bottom: 0.25rem !important;
+        }
+
+        [data-testid="stSidebar"] [role="radiogroup"] label:hover {
+            background: rgba(15, 23, 42, 0.04) !important;
+        }
+
+        [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+            background: var(--surface) !important;
+            color: var(--brand) !important;
+            border-color: var(--line) !important;
+            box-shadow: rgba(0, 0, 0, 0.04) 0px 4px 12px !important;
+            font-weight: 600 !important;
         }
 
         .block-container {
@@ -309,23 +342,25 @@ def apply_styles():
             padding-bottom: 4rem;
         }
 
-        h1, h2, h3 {
+        h1, h2, h3, h4, h5, h6 {
             color: var(--ink);
-            letter-spacing: 0;
+            font-family: 'Outfit', sans-serif !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em;
         }
 
         h1 {
-            font-size: 1.85rem;
+            font-size: 2.1rem;
             margin-bottom: 0.1rem;
         }
 
         h2 {
-            font-size: 1.25rem;
+            font-size: 1.45rem;
             margin-top: 1.4rem;
         }
 
         h3 {
-            font-size: 1.02rem;
+            font-size: 1.15rem;
         }
 
         .app-subtitle {
@@ -333,6 +368,7 @@ def apply_styles():
             margin: 0.1rem 0 1.4rem 0;
             max-width: 760px;
             line-height: 1.55;
+            font-family: 'Inter', sans-serif !important;
         }
 
         .section-label {
@@ -341,31 +377,37 @@ def apply_styles():
             font-weight: 700;
             text-transform: uppercase;
             margin: 1.25rem 0 0.4rem;
+            letter-spacing: 0.05em;
         }
 
+        /* Capsule Steps Indicator */
         .workflow {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            border: 1px solid var(--line);
-            background: var(--surface);
-            margin: 0 0 1.5rem;
+            display: flex;
+            gap: 0.6rem;
+            background: transparent;
+            border: none;
+            margin: 1.5rem 0;
         }
 
         .workflow-step {
-            padding: 0.7rem 0.8rem;
-            border-right: 1px solid var(--line);
+            flex: 1;
+            padding: 0.8rem 1rem;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            box-shadow: rgba(0, 0, 0, 0.02) 0px 2px 4px;
+            transition: all 0.2s ease;
+            text-align: center;
             color: var(--muted);
-            font-size: 0.8rem;
-            font-weight: 650;
-        }
-
-        .workflow-step:last-child {
-            border-right: none;
+            font-size: 0.82rem;
+            font-weight: 600;
         }
 
         .workflow-step.active {
-            color: var(--green);
-            background: var(--green-soft);
+            border-color: var(--brand);
+            background: var(--blue-soft);
+            color: var(--brand);
+            box-shadow: rgba(37, 99, 235, 0.08) 0px 4px 12px;
         }
 
         .workflow-number {
@@ -373,6 +415,8 @@ def apply_styles():
             font-size: 0.7rem;
             color: var(--muted);
             margin-bottom: 0.12rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .metric-strip {
@@ -490,28 +534,52 @@ def apply_styles():
             background: var(--surface);
             border: 1px solid var(--line);
             padding: 0.85rem 0.95rem;
-            border-radius: 6px;
+            border-radius: 12px;
             min-height: 108px;
+            box-shadow: rgba(0, 0, 0, 0.02) 0px 2px 4px;
         }
 
         div[data-testid="stExpander"] {
             border: 1px solid var(--line);
-            border-radius: 6px;
+            border-radius: 12px;
             background: var(--surface);
             overflow: hidden;
+            box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+        }
+
+        /* Container Card Styling with Hover Effects */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 12px !important;
+            border: 1px solid var(--line) !important;
+            background: var(--surface) !important;
+            box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px !important;
+            transition: all 0.22s ease-in-out !important;
+        }
+        
+        div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+            transform: translateY(-2px);
+            box-shadow: rgba(0, 0, 0, 0.06) 0px 8px 24px !important;
+            border-color: #cbd5e1 !important;
         }
 
         .stButton > button, .stDownloadButton > button {
-            border-radius: 4px;
+            border-radius: 8px !important;
             min-height: 2.45rem;
-            font-weight: 650;
-            padding-left: 1rem;
-            padding-right: 1rem;
+            font-weight: 600 !important;
+            padding-left: 1.25rem !important;
+            padding-right: 1.25rem !important;
+            transition: all 0.2s ease !important;
+        }
+
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: rgba(0, 0, 0, 0.05) 0px 4px 12px !important;
         }
 
         .stTextInput input, .stTextArea textarea,
         .stSelectbox [data-baseweb="select"] > div {
-            border-radius: 4px;
+            border-radius: 8px !important;
+            border: 1px solid var(--line) !important;
         }
 
         [data-testid="stDataFrame"] {
