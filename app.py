@@ -2298,7 +2298,10 @@ def render_job_discovery_content():
     """Collects validated search intent before source discovery is enabled."""
     preferences = st.session_state.job_preferences
     profile_suggestions = suggest_job_preferences(active_profile())
-    current = preferences.to_dict() if preferences else profile_suggestions
+    if preferences:
+        current = preferences.to_dict() if hasattr(preferences, "to_dict") else preferences
+    else:
+        current = profile_suggestions
 
     with st.form("job_preferences_form"):
         st.subheader("Search preferences")
