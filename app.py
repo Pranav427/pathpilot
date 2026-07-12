@@ -3437,7 +3437,7 @@ def render_workspace():
     st.button("⬅️ Back to Application Queue", on_click=reset_workflow)
 
     analysis_is_current = (
-        description_fingerprint(job_description)
+        description_fingerprint(st.session_state.job_description)
         == st.session_state.analyzed_description_fingerprint
     )
     if not analysis_is_current:
