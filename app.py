@@ -138,6 +138,39 @@ st.set_page_config(
 )
 
 
+def ensure_job_preferences(prefs) -> JobPreferences:
+    if not prefs:
+        return None
+    if isinstance(prefs, JobPreferences):
+        return prefs
+    if isinstance(prefs, dict):
+        if not prefs:
+            return None
+        valid_keys = {
+            "target_roles", "locations", "experience_levels",
+            "work_modes", "job_types", "preferred_skills",
+            "excluded_keywords", "maximum_job_age_days"
+        }
+        filtered = {k: v for k, v in prefs.items() if k in valid_keys}
+        if not filtered:
+            return None
+        if "target_roles" not in filtered:
+            filtered["target_roles"] = []
+        if "locations" not in filtered:
+            filtered["locations"] = []
+        if "experience_levels" not in filtered:
+            filtered["experience_levels"] = ["Internship", "Fresher / Entry level"]
+        if "work_modes" not in filtered:
+            filtered["work_modes"] = ["Onsite", "Hybrid", "Remote"]
+        if "job_types" not in filtered:
+            filtered["job_types"] = ["Full-time", "Internship"]
+        try:
+            return JobPreferences(**filtered)
+        except Exception:
+            pass
+    return None
+
+
 def user_facing_error(exc: Exception, action: str) -> str:
     """Returns useful UI feedback without exposing provider internals."""
     message = str(exc).strip()
@@ -2298,7 +2331,7 @@ def render_profile():
 
 def render_job_discovery_content():
     """Collects validated search intent before source discovery is enabled."""
-    preferences = st.session_state.job_preferences
+    preferences = ensure_job_preferences(st.session_state.job_preferences)
     profile_suggestions = suggest_job_preferences(active_profile())
     if preferences:
         current = preferences.to_dict() if hasattr(preferences, "to_dict") else preferences
@@ -2412,15 +2445,14 @@ def render_job_discovery_content():
         except ValueError as exc:
             st.error(str(exc))
 
-    if not st.session_state.preferences_saved:
+    preferences = ensure_job_preferences(st.session_state.job_preferences)
+    if not st.session_state.preferences_saved or not preferences:
         st.markdown(
             '<div class="empty-state">Save your preferences to prepare the '
             "job-discovery pipeline.</div>",
             unsafe_allow_html=True,
         )
         return
-
-    preferences = st.session_state.job_preferences
     render_section_label("Active discovery profile")
     st.markdown(
         f"**{', '.join(preferences.target_roles)}**  \n"
