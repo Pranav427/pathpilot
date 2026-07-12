@@ -31,16 +31,6 @@ PathPilot is currently in the **Product Refinement & Demo Readiness** phase.
 
 ---
 
-## Product Roadmap & Versions
-
-| Version | Theme | Goal | Key Features |
-| :--- | :--- | :--- | :--- |
-| **V1.0** | **Application Intelligence** | Help users get more interview calls | Master Profile, Role Recommendations, Discovery feeds, dynamic Scorer & Matcher, Resume/Cover letter Tailoring, and persistent Tracker. (Active/Complete) |
-| **V1.5** | **Interview Intelligence** | Help users prepare for interviews | Application status triggers, Resume/JD-based practice questions, Behavioral prep, and Company Dossier briefs. (Target Phase) |
-| **V2.0** | **Application Automation** | Reduce repetitive work | Playwright form auto-fillers, Scheduled scans, and Outreach follow-ups. (Future) |
-
----
-
 ## Core User Workflow (V1.0)
 
 > **Master Profile**  
@@ -51,60 +41,6 @@ PathPilot is currently in the **Product Refinement & Demo Readiness** phase.
 > ➔ **Personalized Cover Letter Compilation**  
 > ➔ **Quality & ATS Validation Check**  
 > ➔ **Tracker Draft & Status Pipeline**
-
----
-
-## Project Structure
-
-```text
-PathPilot/
-├── app.py                    Streamlit application
-├── main.py                   CLI application
-├── application_service.py    Reusable application workflow
-├── job_discovery.py          Multi-source job discovery providers & filters
-├── job_preferences.py        Search parameters and user profile suggestions
-├── profile.py                Candidate default master profile
-├── tracker.py                Database applications and ranking history store
-├── db_client.py              SQLite client wrapper
-└── tests/                    Automated testing suite
-```
-
----
-
-## Multi-Source Discovery Setup
-
-When multiple providers are configured, **All live sources** combines and deduplicates their results. Direct company feeds are ranked ahead of broad aggregator feeds when relevance and experience confidence are otherwise close.
-
-### Broad Market Aggregators
-
-For broader market coverage, register an Adzuna API application and configure:
-```env
-ADZUNA_APP_ID=your_app_id
-ADZUNA_APP_KEY=your_app_key
-ADZUNA_COUNTRY=in
-```
-
-For a second broad-market source, configure Jooble:
-```env
-JOOBLE_API_KEY=your_api_key
-JOOBLE_COUNTRY=in
-```
-
-### Google Jobs search (Unified)
-PathPilot supports a unified Google Jobs search option using SearchApi.io (preferred) or SerpAPI:
-```env
-# Optional SearchApi.io (preferred)
-SEARCHAPI_API_KEY=your_searchapi_key
-
-# Optional SerpAPI
-SERPAPI_API_KEY=your_serpapi_key
-```
-
-### Local Testing Catalog
-The fictional sample catalog is hidden from normal users. Developers may enable it explicitly for offline workflow testing:
-```env
-APPLYSMART_ENABLE_SAMPLE_JOBS=true
-```
 
 ---
 
@@ -135,9 +71,69 @@ Execute unit and regression tests cleanly with:
 python -m pytest -q
 ```
 
+### View Application History
+To inspect approved applications and ranking runs locally, use:
+```bash
+python tracker.py
+```
+
 ---
 
-## Tracked Fields & Verdicts
+## Advanced Configuration & Discovery Setup
+
+When multiple providers are configured, **All live sources** combines and deduplicates their results. Direct company feeds are ranked ahead of broad aggregator feeds when relevance and experience confidence are otherwise close.
+
+### Broad Market Aggregators
+
+For broader market coverage, register an Adzuna API application and configure:
+```env
+ADZUNA_APP_ID=your_app_id
+ADZUNA_APP_KEY=your_app_key
+ADZUNA_COUNTRY=in
+```
+
+For a second broad-market source, configure Jooble:
+```env
+JOOBLE_API_KEY=your_api_key
+JOOBLE_COUNTRY=in
+```
+
+### Google Jobs search (Unified)
+PathPilot supports a unified Google Jobs search option using SearchApi.io (preferred) or SerpAPI:
+```env
+# Optional SearchApi.io (preferred)
+SEARCHAPI_API_KEY=your_searchapi_key
+
+# Optional SerpAPI
+SERPAPI_API_KEY=your_serpapi_key
+```
+
+### Local Testing Catalog
+The fictional sample catalog is hidden from normal users. Developers may enable it explicitly for offline testing:
+```env
+APPLYSMART_ENABLE_SAMPLE_JOBS=true
+```
+
+---
+
+## Project Structure
+
+```text
+PathPilot/
+├── app.py                    Streamlit application
+├── main.py                   CLI application
+├── application_service.py    Reusable application workflow
+├── job_discovery.py          Multi-source job discovery providers & filters
+├── job_preferences.py        Search parameters and user profile suggestions
+├── profile.py                Candidate default master profile
+├── tracker.py                Database applications and ranking history store
+├── db_client.py              SQLite client wrapper
+└── tests/                    Automated testing suite
+```
+
+---
+
+## Fit Verdicts & Tracker Fields
 
 ### Tracker Database Schema
 * **Applications**: Company, Job title, Source URL, Status, Fit score, ATS score, Resume path, Cover letter path, Created date.
@@ -160,9 +156,10 @@ PathPilot uses a transparent scoring layer and produces verdicts:
 
 ---
 
-## Phase-wise Roadmap
+## Unified Product Roadmap
 
-- **Phase 1-3**: Core application engine, URL fetching, multi-job URL ranking, SQLite history, and regression tests. *(Completed)*
-- **Phase 4**: Streamlit application UI, failure isolation, and document review. *(Completed)*
-- **Phase 5**: SaaS beta foundation, campaign manager, and analytics. *(In Progress)*
-- **Phase 6-8**: Outcome tracking, persistent hosted DB, and agent-based Career Copilot. *(Planned)*
+| Version | Target Phase | Status | Key Focus Area |
+| :--- | :--- | :--- | :--- |
+| **V1.0** | **Application Intelligence** | **Completed** | Master Profile, recommendations, Discovery feeds, Matcher, Resume/Cover Letter tailoring, and Local Database Tracker. |
+| **V1.5** | **Interview Intelligence** | **In Progress** | Behavior practice questions, Resume/JD-based preparation, and Company Dossier briefs. |
+| **V2.0** | **Application Automation** | **Planned** | Playwright auto-fillers, Scheduled scans, and Outreach follow-ups. |
