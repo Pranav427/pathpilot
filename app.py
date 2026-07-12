@@ -1083,10 +1083,6 @@ def load_shortlisted_job(app):
                 desc = getattr(discovered, "job_description", "")
                 break
                 
-    if not desc:
-        st.session_state.history_load_error = "Could not load the job description. Please paste it manually."
-        return
-
     st.session_state.job_analysis = None
     st.session_state.base_profile = None
     st.session_state.base_match = None
@@ -1107,7 +1103,13 @@ def load_shortlisted_job(app):
     st.session_state[f"manual_pasted_url_input_{form_revision}"] = app["source_url"]
     st.session_state.input_method = "Paste description"
     
-    st.session_state.loaded_job_notice = f"Loaded details for **{app['company_name']} - {app['job_title']}**"
+    if not desc:
+        st.session_state.history_load_error = "Loaded company & title, but could not retrieve the description automatically. Please paste it below!"
+        st.session_state.loaded_job_notice = ""
+    else:
+        st.session_state.history_load_error = ""
+        st.session_state.loaded_job_notice = f"Loaded details for **{app['company_name']} - {app['job_title']}**"
+        
     st.session_state.navigation = "Application"
 
 
