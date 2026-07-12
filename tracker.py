@@ -749,7 +749,7 @@ def interactive_menu():
 
 
 def seed_demo_data(user_id: int, db_path: str = DB_PATH) -> None:
-    """Seeds the database with mock jobs, runs, and applications for Demo Mode."""
+    """Seeds the database with mock jobs, runs, and applications for Demo Mode (clearing any old data)."""
     init_db(db_path)
     
     # Always clear existing demo data to ensure a clean refresh
@@ -771,42 +771,6 @@ def seed_demo_data(user_id: int, db_path: str = DB_PATH) -> None:
     db_client.execute_write(
         "DELETE FROM discovered_jobs WHERE user_id = ?",
         (user_id,),
-        db_path=db_path
-    )
-    
-    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-    # Seed applications (tracker)
-    db_client.execute_write(
-        """INSERT INTO applications 
-        (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("Alpha AI", "Software Development Engineer (Intern)", "SHORTLISTED", 94, 85, 
-         "Direct outreach sent to hiring manager on LinkedIn.", now, now, user_id),
-        db_path=db_path
-    )
-    db_client.execute_write(
-        """INSERT INTO applications 
-        (company_name, job_title, status, match_score, ats_score, notes, created_at, updated_at, user_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("Northstar Analytics", "Data Scientist", "DRAFT_GENERATED", 78, 70, 
-         "Tailored resume and cover letter generated. Reviewing details.", now, now, user_id),
-        db_path=db_path
-    )
-        
-    db_client.execute_write(
-        """INSERT OR IGNORE INTO discovered_jobs 
-        (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("demo-1", "Sample catalog", "Alpha AI", "Software Development Engineer (Intern)", "Remote", "Remote", "Full-time", "Internship", now,
-         "Software Development Engineer (Associate/Intern) Location: Remote (India preferred) | Type: Full-time | Compensation: Competitive salary early-stage stock options About Alpha Modern revenue teams juggle 10 point-solutions. Alpha unifies them into an agent-powered platform that plans, executes, and optimises GTM campaigns—so every touch happens on the right channel, at the right time, with the right context. Alpha is building the world's most intuitive AI stack for revenue teams — to engage, co-pilot, and convert. The Role As an early engineer, you will work directly with the founders to build our core orchestration engine, implement LLM agents, design high-throughput data pipelines, and craft responsive user experiences. Requirements: Strong Python and Javascript coding skills, familiarity with API integration, SQL databases, and streamlit or modern frontend frameworks. Prior experience with LLMs/AI prompt engineering is a plus.", now, now, user_id),
-        db_path=db_path
-    )
-    db_client.execute_write(
-        """INSERT OR IGNORE INTO discovered_jobs 
-        (provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, first_seen_at, last_seen_at, user_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("demo-2", "Sample catalog", "Northstar Analytics", "Data Scientist", "Bengaluru", "Hybrid", "Full-time", "Fresher / Entry level", now,
-         "Northstar Analytics is hiring a Data Scientist to build predictive analytics models for supply chain optimization. Requirements: Python, pandas, scikit-learn, SQL, and experience with statistical analysis. Bengaluru location.", now, now, user_id),
         db_path=db_path
     )
 
