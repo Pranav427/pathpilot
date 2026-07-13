@@ -85,16 +85,6 @@ Recommended jobs should require:
 - Ensure buttons have clear labels.
 - Long job descriptions should be collapsed by default.
 
-## Interview Prep Dashboard UX (V1.5)
-
-- **Unlock Cue**: Visually distinguish applied/interview states in the Tracker list using success tones (e.g. green status pill) and present a prominent primary action button to "Start Interview Prep".
-- **Structured Tabs**: Layout questions into clean, categorized tabs or accordions to avoid information overload:
-  - **Resume Drills**: Specific challenges highlighting bullet points.
-  - **JD Drills**: Technical stack questions.
-  - **Behavioral Prompts**: Behavioral scenario practices.
-  - **Company Dossier**: Compact briefs on values and stack.
-- **Inputs**: Provide clear text areas for candidate note-taking, saving answers, and tracking mock attempts.
-
 ## Mobile Direction
 
 Current alpha can prioritize desktop. Future SaaS should support mobile review with a bottom navigation or condensed sidebar, compact job cards, and sticky primary actions.

@@ -34,7 +34,6 @@ from job_discovery import (
     LocalSampleJobProvider,
     RemotiveJobProvider,
     RemoteOKJobProvider,
-    SearchApiGoogleJobsProvider,
     SerpApiGoogleJobsProvider,
     deduplicate_jobs,
     discover_jobs,
@@ -1324,60 +1323,6 @@ def test_serpapi_provider_requires_credentials():
         assert "SERPAPI_API_KEY" in str(exc)
     else:
         raise AssertionError("Expected missing SerpAPI credentials to fail")
-
-
-def test_searchapi_provider_fetches_and_parses_results():
-    payload = {
-        "jobs": [
-            {
-                "job_id": "test-job-123",
-                "title": "Data Science Intern",
-                "company_name": "Example India AI",
-                "location": "Bengaluru",
-                "via": "LinkedIn",
-                "description": "This is a detailed job description that is long enough to pass length checks. Requires Python and machine learning knowledge.",
-                "detected_extensions": {
-                    "posted_at": "2 days ago",
-                    "work_from_home": True,
-                    "schedule": "Full-time",
-                },
-                "sharing_link": "https://google.com/jobs/sharing",
-                "apply_link": "https://www.linkedin.com/jobs/view/123",
-            }
-        ]
-    }
-    requested_urls = []
-
-    def opener(request, **_kwargs):
-        requested_urls.append(request.full_url)
-        return FakeResponse(payload)
-
-    provider = SearchApiGoogleJobsProvider(
-        "api-key",
-        opener=opener,
-        max_queries=1,
-    )
-
-    jobs = provider.discover(preferences())
-
-    assert len(jobs) == 1
-    assert jobs[0].source == "Google Jobs · LinkedIn"
-    assert jobs[0].company_name == "Example India AI"
-    assert jobs[0].job_type == "Internship"  # lever_job_type or fallback
-    assert jobs[0].experience_level == "Internship"
-    assert jobs[0].freshness_verified
-    assert jobs[0].apply_url == "https://www.linkedin.com/jobs/view/123"
-    assert "engine=google_jobs" in requested_urls[0]
-    assert "location=Bengaluru" in requested_urls[0]
-
-
-def test_searchapi_provider_requires_credentials():
-    try:
-        SearchApiGoogleJobsProvider("")
-    except ValueError as exc:
-        assert "SEARCHAPI_API_KEY" in str(exc)
-    else:
-        raise AssertionError("Expected missing SearchAPI credentials to fail")
 
 
 def test_early_career_provider_combines_sources_and_failures():

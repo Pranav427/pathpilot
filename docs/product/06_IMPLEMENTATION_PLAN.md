@@ -1,55 +1,161 @@
-# Document 06 - Implementation Plan & Roadmap
+# Document 06 - Implementation Plan
 
-This document outlines the implementation phases of PathPilot's feature roadmap, grouped by Version themes.
+## Phase 1 - Stabilize Current Alpha
 
----
+Goal: keep the current Streamlit product reliable while continuing product discovery.
 
-## Roadmap Phases
+Tasks:
 
-```mermaid
-graph TD
-    A["V1.0 - Application Intelligence<br>Goal: Get Interview Calls"] --> B["V1.5 - Interview Intelligence<br>Goal: Pass the Interview"]
-    B --> C["V2.0 - Application Automation<br>Goal: Automate Pipelines"]
-```
+- Keep resume and cover-letter generation stable.
+- Preserve deterministic tests for safety, scoring, tracker, and Streamlit imports.
+- Keep user-approved application tracking.
+- Make profile-based job preferences clear and repeatable.
 
----
+Done criteria:
 
-## Phase 1 - V1.0: Application Intelligence (Current Stable Core)
+- Full test suite passes.
+- Manual flow works from job discovery to prepared application.
+- No generated document claims unsupported candidate experience.
 
-Goal: Maximize interview callback rates by generating highly tailored, ATS-optimized resumes and cover letters from a single Master Profile.
+## Phase 2 - Improve Job Discovery Backbone
 
-### Completed Tasks:
-- **Master Profile Core**: Structured profile schemas and PDF parsing algorithms.
-- **Role Recommendations**: Skills-to-role matching logic.
-- **Discovery Engine**: Unified query pipeline integrating Greenhouse, Lever, Ashby, Adzuna, and Jooble.
-- **Deterministic Fit Scorer**: Keyword coverage calculations, alias mapping, and seniority penalization.
-- **PDF Document Compiler**: LaTeX asset compilation with a pure-Python ReportLab fallback.
-- **Application Tracker**: SQLite/PostgreSQL-compatible persistent logging schema.
+Goal: produce enough relevant jobs for real users without relying on one source.
 
----
+Tasks:
 
-## Phase 2 - V1.5: Interview Intelligence (Current Target Build)
+- Expand curated Greenhouse, Lever, and Ashby company feeds.
+- Improve source diagnostics so users know why provider coverage is weak.
+- Keep Adzuna and Jooble as broad-market fallback sources.
+- Improve entry-level detection and seniority filtering.
+- Deduplicate noisy aggregator results.
+- Add a source-quality score per job.
+- Add provider-level tests for filtering, deduplication, freshness, and source failures.
 
-Goal: Prepare users for interviews using the specific context of their generated materials and the target job description.
+Done criteria:
 
-### Roadmap Tasks:
-- **Status Trigger Integration**: Unlock the Interview Prep module when application status in the Tracker updates to `Applied` or `Interview`.
-- **Context Packer Service**: Implement a service that compiles the Master Profile, tailored resume content, target job description, and company name into an LLM context.
-- **Structured Practice Questions Generator**:
-  - **Resume Questions**: Contextual questions targeting the project details and claims written in the tailored resume.
-  - **JD Questions**: Technical queries based on the target job requirements.
-  - **Behavioral Questions**: Company/role-aligned behavioral mock prompts.
-  - **Company Intelligence Briefs**: Generates brief summaries of the target employer's tech stack and objectives.
-- **DB Persistence**: Create `interview_preps` table schema in `db_client.py` to persist practice questions and user notes.
-- **UI Interface**: Build a responsive interview prep panel in Streamlit next to the tracked application record.
+- Common broad searches return at least 10 usable jobs when market supply exists.
+- Recommended results contain low seniority conflict.
+- Source coverage does not depend almost entirely on one provider for every search.
 
----
+## Phase 3 - Productize The Job Inbox
 
-## Phase 3 - V2.0: Application Automation (Future Backlog)
+Goal: make job review feel like a real user workflow, not a raw list.
 
-Goal: Reduce manual overhead by automating the document upload and submission process.
+Tasks:
 
-### Backlog Tasks:
-- **Form Filler Engine**: Playwright browser automation scripts to identify and fill input fields on standard career portals (Greenhouse, Lever, etc.).
-- **Scheduler Scans**: Automated daily runs that fetch, filter, and queue recommended jobs based on active preferences.
-- **Smart Follow-ups**: Automatically compose and draft recruiter outreach emails upon application submission.
+- Default to Recommended jobs.
+- Show compact job cards with source, confidence, location, and action buttons.
+- Collapse long descriptions.
+- Add clear statuses: New, Shortlisted, Prepared, Ignored.
+- Explain why a job is recommended or manual-review only.
+- Make Prepare Application transfer only the selected job.
+
+Done criteria:
+
+- A new tester can understand and use the inbox without explanation.
+- No user confuses job discovery with automatic applying.
+- Original job and apply links are visible when available.
+
+## Phase 4 - SaaS Backend Foundation
+
+Goal: prepare the product for real accounts, saved data, and scheduled discovery.
+
+Tasks:
+
+- Choose auth provider.
+- Choose PostgreSQL provider.
+- Implement users, profiles, preferences, discovered jobs, discovery runs, recommendations, applications, documents, and outcomes.
+- Move session-only profile data into persistent user-owned records.
+- Add object storage for generated PDFs.
+- Add background job ingestion design.
+
+Done criteria:
+
+- Each user has isolated profile, jobs, applications, and documents.
+- Job discovery results can be stored, refreshed, and reused.
+- Generated documents are private and retrievable.
+
+## Phase 5 - Scheduled Discovery And Alerts
+
+Goal: make PathPilot proactive.
+
+Tasks:
+
+- Run scheduled discovery for saved preferences.
+- Store daily/weekly new matches.
+- Notify users through email or dashboard alerts.
+- Avoid re-showing ignored duplicates.
+- Track source freshness and provider health.
+
+Done criteria:
+
+- User can save preferences once and see fresh job recommendations later.
+- Duplicate and stale listings are controlled.
+- Provider failures do not break the daily run.
+
+## Phase 6 - Outcome Analytics
+
+Goal: learn which applications and roles produce interviews.
+
+Tasks:
+
+- Add outcome statuses: applied, interview, rejected, offer, withdrawn.
+- Track application date and response date.
+- Show role/category conversion insights.
+- Compare fit scores with real outcomes.
+- Suggest better target roles and skill gaps based on history.
+
+Done criteria:
+
+- User can see which applications are working.
+- Product can learn from outcomes without exposing private data.
+
+## Phase 7 - Production UI
+
+Goal: move from Streamlit alpha to a scalable SaaS interface.
+
+Tasks:
+
+- Design production dashboard.
+- Build onboarding, profile editor, discovery inbox, application workspace, tracker, and analytics pages.
+- Add responsive layouts.
+- Add loading, empty, and error states.
+- Add accessible component styling.
+
+Done criteria:
+
+- Core flows are usable on desktop and mobile.
+- Visual design feels cohesive and trustworthy.
+- Streamlit no longer blocks product-quality UX.
+
+## Phase 8 - Deployment And Operations
+
+Goal: launch safely on the internet.
+
+Tasks:
+
+- Configure production environment variables.
+- Set up logging and error monitoring.
+- Add rate limits for AI and provider APIs.
+- Add privacy policy and terms.
+- Set up backup strategy.
+- Add smoke tests for deployment.
+
+Done criteria:
+
+- Production app can be shared publicly.
+- Secrets are secure.
+- Provider/API failures are observable.
+- User data is protected.
+
+## Build Order Recommendation
+
+The next serious product work should follow this order:
+
+1. Job discovery source expansion and quality.
+2. Job inbox UX refinement.
+3. Persistent SaaS backend schema.
+4. Auth and user-owned profiles.
+5. Scheduled discovery.
+6. Outcome analytics.
+7. Production frontend migration.

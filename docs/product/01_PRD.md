@@ -12,94 +12,65 @@ The intelligent platform for modern careers.
 
 ## Problem
 
-Job seekers waste time across fragmented job boards, duplicated listings, expired roles, unclear eligibility, and generic applications. Early-career candidates struggle to match their projects and skills to realistic roles, extract relevant evidence to pass ATS checks, and prepare effectively for interviews once they do get called.
+Job seekers waste time across fragmented job boards, duplicated listings, expired roles, unclear eligibility, and generic applications. Freshers and early-career candidates especially struggle to identify roles that match their actual profile, convert project experience into job-ready evidence, and understand why a role is or is not worth applying to.
 
----
+## Target User
 
-## Product Philosophy & Core Journey
+The primary user is an early-career job seeker, fresher, student, or career switcher targeting data science, AI/ML, software engineering, analytics, or related technology roles. They have projects and skills but need help finding realistic jobs, tailoring documents, and tracking applications in one workflow.
 
-PathPilot is built around a single, comprehensive **Master Profile** (representing the user's complete capabilities, experiences, and projects). The system dynamically extracts the most relevant evidence to tailor resumes and cover letters for specific jobs, rather than forcing the user to maintain separate manual personas.
+## Core Value Proposition
 
-```text
-Master Profile
-      │
-      ▼
-Profile Intelligence (Candidate analysis)
-      │
-      ▼
-Career Role Recommendations (Suggest target paths)
-      │
-      ▼
-User selects role
-      │
-      ▼
-Job Discovery (Aggregated, filtered listings)
-      │
-      ▼
-User selects job
-      │
-      ▼
-Job Description Intelligence (Analyze requirements)
-      │
-      ▼
-Evidence Selection (AI selects matching items from Master Profile)
-      │
-      ▼
-ATS-Friendly Resume (Tailored layout)
-      │
-      ▼
-Personalized Cover Letter (Targeted tone)
-      │
-      ▼
-Quality Validation (ATS & factuality checks)
-      │
-      ▼
-Ready to Apply
-```
+PathPilot is not just a resume generator. It connects profile intelligence, job discovery, fit scoring, document generation, preparation, and tracking so users can apply to better-fit roles with stronger evidence-backed materials and better career decisions.
 
----
+## Must-Have Features
 
-## Feature Matrix by Version
+- Profile-based job preferences derived from verified user skills, roles, and experience.
+- Multi-source job discovery from reliable APIs and company career feeds.
+- Job filtering by role, location, experience level, work mode, job type, freshness, and exclusions.
+- Job ranking with transparent relevance and experience-confidence signals.
+- Manual job description input and public job URL ingestion.
+- JD analysis for skills, tools, responsibilities, keywords, and requirements.
+- Candidate-to-job matching with evidence-backed fit scoring.
+- Resume generation tailored to selected job requirements.
+- Cover letter generation tailored to selected company and role.
+- ATS keyword coverage and quality checks.
+- Application tracker for generated drafts and user review.
+- Explicit user approval before saving or using generated materials.
 
-### V1.0 - Application Intelligence (Goal: Get Interview Calls)
-* **Master Profile**: Comprehensive portfolio of skills, education, experience, projects, and target roles.
-* **Profile Intelligence**: Automated parsing and capabilities assessment.
-* **Role Recommendation**: Suggests aligned titles (e.g. Data Scientist, AI Engineer) based on profile evidence.
-* **Job Discovery**: Aggregated, deduplicated direct feeds (Greenhouse, Lever, Ashby) and API fallbacks.
-* **Job Matching & Scorer**: Strict, transparent fit scores with alias mapping and seniority checks.
-* **Dynamic Evidence Selection**: Automatically extracts matching projects and skills from the Master Profile.
-* **Resume & Cover Letter Generation**: Dynamic tailoring with LaTeX or a pure-Python fallback.
-* **ATS & Quality Validation**: Validates keyword coverage and prevents factuality hallucination.
-* **Application Tracker**: Pipeline tracker logs generated drafts, status, and metadata.
+## Nice-To-Have Features
 
-### V1.5 - Interview Intelligence (Goal: Pass the Interview)
-* **Status Unlock**: Triggered when an application status updates to `Applied` or `Interview` in the Tracker.
-* **Resume-based Questions**: Practice questions targeting the specific tailored resume version submitted.
-* **JD-based Questions**: Technical queries aligned with the target job description requirements.
-* **Project & Skill Gap Questions**: Drills down into the candidate's projects and points out gap solutions.
-* **Company-focused Preparation**: Summarizes company culture, tech stack, and strategic goals.
-* **Behavioral & Mock Prep**: Framework-aligned behavioral questions and mock interview simulation.
+- Daily job alerts based on saved profile preferences.
+- Outcome analytics showing which roles and resumes produce interviews.
+- Skill-gap learning recommendations.
+- Saved job collections and shortlist workflows.
+- Browser extension for capturing roles from job boards.
+- Multi-profile support for different target career paths.
+- Team/admin dashboard for colleges or placement support.
 
-### V2.0 - Application Automation (Goal: Reduce Repetitive Work - Future Roadmap)
-* **Browser Automation**: Automated form fills for application pipelines (e.g. Playwright integration).
-* **Auto-Apply**: Automatic submission workflows where authorized.
-* **Smart Follow-ups**: Automated outreach emails and follow-ups.
-* **System Notifications**: Email/desktop alerts for new high-fit jobs.
+## Out Of Scope For Current Build
 
----
-
-## Out Of Scope For Current Build (V1.0 & V1.5)
-
-- Automatic application form-submission.
-- Scraping LinkedIn, Indeed, or Naukri pages without approved API credentials.
+- Automatic application submission on behalf of the user.
+- Scraping LinkedIn, Naukri, or Indeed without approved/licensed access.
 - Paid subscription billing.
-- Recruiter/employer-facing dashboards.
+- Full multi-user SaaS database and auth.
+- Interview scheduling automation.
+- Employer/recruiter-facing dashboard.
 
----
+## User Stories
+
+- As a fresher, I want PathPilot to discover entry-level roles based on my profile so that I do not waste time on senior roles.
+- As a job seeker, I want to review the original job posting before preparing an application so that I can verify the role is real.
+- As a candidate, I want a fit score with matched and missing skills so that I understand whether to apply.
+- As a user, I want tailored resume and cover-letter drafts so that I can apply faster with stronger materials.
+- As a tester, I want to use my own profile without editing the repository profile so that feedback reflects my real career situation.
+- As a future SaaS user, I want my saved profile to drive job recommendations automatically so that the product feels personalized.
 
 ## Success Metrics
 
-- Users can go from Master Profile creation to discovery and generating a tailored draft in under 10 minutes.
-- Resume and cover-letter generation compiles cleanly without inventing any candidate qualifications.
-- Less than 10% senior/unqualified roles are recommended in the user's role dashboard.
-- Tracker correctly preserves document assets and transitions them into the Interview Prep workspace upon status update.
+- At least 10 relevant jobs returned for common broad searches such as AI/ML fresher roles across major Indian tech cities.
+- At least 3-5 recommended jobs returned for narrow city searches when supply exists.
+- Less than 10% obviously senior/unqualified jobs in the recommended view.
+- Resume and cover-letter generation succeeds for selected jobs without manual recovery.
+- Users can complete profile to job discovery to application preparation in under 10 minutes.
+- Testers can understand why jobs were accepted or filtered without developer explanation.
+- Application drafts are tracked with clear status and source URL.

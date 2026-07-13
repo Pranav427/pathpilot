@@ -168,14 +168,6 @@ Indexes:
 - `error_class` text nullable
 - `created_at` timestamp
 
-## Table: interview_preps
-
-- `id` uuid primary key
-- `application_id` uuid foreign key to applications.id
-- `prep_questions_json` jsonb (categorized questions & feedback)
-- `user_notes` text
-- `created_at` timestamp
-
 ## Auth And Security
 
 - Users can read and write only their own profiles, preferences, recommendations, applications, and documents.

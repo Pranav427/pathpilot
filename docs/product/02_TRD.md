@@ -1,56 +1,114 @@
 # Document 02 - Technical Requirements Document
 
-## Architecture Overview
+## Current Frontend
 
-PathPilot is designed as a modular, local-first Python application that operates under a single client runtime (Streamlit) and database interface (`db_client.py`). The services are structured to transition into a cloud-native SaaS backend.
+Streamlit with Python 3.11.
 
----
+The current app is optimized for rapid product validation, demo testing, and local/cloud Streamlit deployment.
 
-## Technical Stack & Version Alignment
+## Future Frontend Direction
 
-### V1.0 - Application Intelligence (Core Engine)
-- **Frontend**: Streamlit. Focuses on rapid iteration and local validation.
-- **Backend Services**:
-  - `application_service.py`: Orchestrates the matching and generation flow.
-  - `db_client.py`: Abstraction layer routing to SQLite locally or PostgreSQL in production.
-  - `job_discovery.py` & `job_store.py`: Aggregation and normalization of company feeds.
-  - `analyzer.py` & `matcher.py`: Structured AI parsing and profile evaluation.
-  - `scoring.py`: Deterministic scoring rules (alias handling, seniority penalties).
-  - `resume.py` & `cover_letter.py`: Tailored asset generation using LaTeX (with ReportLab PDF fallback).
-  - `quality.py`: ATS validation and factuality constraints check.
-- **Persistence**: SQLite (local) / PostgreSQL (production).
-- **Authentication**: Centralized local alpha validation, prepared for production providers (e.g. Supabase Auth).
+For SaaS scale, migrate the customer-facing app to a production web stack such as Next.js with TypeScript and a component system. Streamlit can remain an internal prototype/admin surface until the SaaS frontend is ready.
 
-### V1.5 - Interview Intelligence (Interview Workspace)
-- **AI Service**: Prompt orchestration targeting contextual interview drills.
-- **Prompt Inputs**: Combines the Master Profile, generated resume, job description, target role, and company name.
-- **Structured JSON outputs**: Evaluates skill gaps and generates:
-  - Technical Questions
-  - Behavioral Questions
-  - Resume-specific Project Questions
-  - Company Culture Briefs
-- **Database Schema Extensions**:
-  - `interview_preps`: id, application_id, prep_questions_json (structured categories), user_notes, created_at.
+## Current Backend
 
-### V2.0 - Application Automation (Orchestration - Future)
-- **Execution Engines**: Playwright integration for headless form completion on simple career pages.
-- **Scheduler**: Cron-based background routines for automated preferences scans.
+Python service modules inside the same repository:
 
----
+- `application_service.py` for the end-to-end application workflow.
+- `job_discovery.py` for provider-neutral job discovery.
+- `job_preferences.py` for profile-based search intent.
+- `job_fetcher.py` and `job_search.py` for URL ingestion and ranking.
+- `analyzer.py`, `matcher.py`, `scoring.py`, `resume.py`, `cover_letter.py`, and `quality.py` for AI and document workflows.
+- `tracker.py` for local SQLite persistence.
 
-## Production DB Schema (PostgreSQL)
+## Future Backend Direction
 
-- **`users`**: id, email, password_hash, created_at.
-- **`user_profiles`**: user_id, profile_name, name, email, phone, linkedin, github, portfolio, location, raw_profile_json, updated_at.
-- **`applications`**: id, company_name, job_title, source_url, status, match_score, ats_score, resume_path, cover_letter_path, notes, job_analysis_json, match_json, ats_report_json, created_at, updated_at, user_id.
-- **`job_search_runs`**: id, total_urls, successful_jobs, failed_jobs, report_path, failures_json, created_at, user_id.
-- **`ranked_jobs`**: id, search_run_id, rank, company_name, job_title, source_url, fit_score, fit_verdict, extraction_quality, missing_skills_json, job_analysis_json, match_json, created_at.
-- **`discovered_jobs`**: id, provider_job_id, source, company_name, job_title, location, work_mode, job_type, experience_level, posted_date, job_description, date_label, freshness_verified, source_url, apply_url, raw_json, first_seen_at, last_seen_at, user_id.
-- **`interview_preps` [NEW - V1.5]**: id, application_id, prep_questions_json, user_notes, created_at.
+Use a dedicated API backend when moving to SaaS. A conservative path is Python FastAPI because the existing business logic is already Python-based.
 
----
+## Current Database
 
-## Constants & Constraints
-- **Hallucination Prevention**: Tailored documents must only use claims, skills, and projects present in the Master Profile.
-- **Keyword Filtering**: Obvious boilerplates, company names, and title banners are excluded from ATS match ratios to prevent score inflation.
-- **Error Propagation**: Low-level provider errors are isolated in the aggregation layer, enabling partial discovery results without system crash.
+SQLite for local application tracking and ranking history.
+
+## Future Database
+
+PostgreSQL, preferably through Supabase or a managed Postgres provider, with row-level user ownership and audit-friendly application history.
+
+## Authentication
+
+Current: local/private alpha password and session-local tester profiles.
+
+Future: Supabase Auth, Clerk, or another production auth provider with email login and optional Google OAuth.
+
+## Hosting
+
+Current:
+
+- Streamlit local development.
+- Streamlit Community Cloud/private alpha deployment.
+
+Future:
+
+- Web frontend on Vercel or equivalent.
+- API/backend on Railway, Render, Fly.io, or a cloud container service.
+- PostgreSQL on Supabase or managed Postgres.
+- Object storage for generated PDFs.
+
+## Third-Party APIs
+
+Current and near-term:
+
+- Anthropic or Gemini for structured AI generation.
+- Greenhouse public job boards.
+- Lever public postings.
+- Ashby public job boards.
+- Adzuna broad job API.
+- Jooble broad job API.
+
+Possible future:
+
+- Licensed job data partner or search API for broader market coverage.
+- Email service for daily alerts.
+- Payment provider for SaaS subscriptions.
+
+## Key Libraries
+
+- Streamlit for UI.
+- Requests/BeautifulSoup-style extraction for public pages.
+- SQLite standard library for local persistence.
+- ReportLab fallback for PDF generation.
+- Pytest for regression tests.
+- Anthropic/Gemini SDKs depending on selected provider.
+
+## Environment Variables
+
+- `LLM_PROVIDER`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `GREENHOUSE_BOARDS`
+- `LEVER_SITES`
+- `ASHBY_BOARDS`
+- `ADZUNA_APP_ID`
+- `ADZUNA_APP_KEY`
+- `ADZUNA_COUNTRY`
+- `JOOBLE_API_KEY`
+- `JOOBLE_COUNTRY`
+- `APP_PASSWORD`
+- `APPLYSMART_ALPHA_MODE`
+- `MAX_AI_ACTIONS_PER_SESSION`
+- Candidate contact variables for local profile defaults.
+
+Note: `APPLYSMART_*` environment variable names are legacy compatibility keys
+kept during the PathPilot rebrand. Product-facing surfaces should use
+PathPilot.
+
+## Constraints
+
+- Do not scrape LinkedIn, Naukri, Indeed, or similar platforms without approved access.
+- Job discovery must preserve source attribution and original job URLs.
+- The app must not automatically apply to jobs.
+- AI output must not invent candidate experience or unsupported claims.
+- Profile-derived job preferences must remain user-reviewable.
+- Recommended jobs must prioritize entry-level/fresher evidence over raw keyword overlap.
+- Provider failures should be isolated so one failing source does not break discovery.

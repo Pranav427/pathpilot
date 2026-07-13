@@ -1,63 +1,93 @@
 # Document 03 - App Flow
 
-This document details the user journey across PathPilot's version roadmap: Application Intelligence (V1.0), Interview Intelligence (V1.5), and Application Automation (V2.0).
+## Navigation Type
 
----
+Current app uses a left sidebar with main workspace sections:
 
-## Workspace Navigation
+- Application
+- Job Discovery
+- Job Ranking
+- Profile
+- Tracker
 
-The Streamlit interface exposes a sidebar navigation panel containing the following pages:
-1. **Profile**: Input and manage the Master Profile.
-2. **Job Discovery**: Scan live feeds and APIs based on profile preferences.
-3. **Job Ranking**: Ingest job URLs, rank them, and select shortlists.
-4. **Application**: Single-job workspace to match profile details, generate tailored assets, and check ATS coverage.
-5. **Tracker**: View application status history and unlock the Interview Prep dashboard.
+Future SaaS should keep this workspace model but make the flow clearer with a top-level dashboard and guided steps.
 
----
+## First Screen
 
-## Core Journey 1 - V1.0 Application Intelligence
+Current private alpha:
 
-### 1. Master Profile Setup
-- User creates an account or logs in.
-- User sets up their Master Profile (via resume parsing, manual input, or loading sandbox mock data).
-- System analyzes the profile data to identify core strengths and suggest matching roles (Data Scientist, SDE, ML Engineer).
+1. User opens PathPilot.
+2. User enters the private alpha password if enabled.
+3. User lands in the main workspace.
 
-### 2. Search & Discovery
-- User opens Job Discovery and selects target roles.
-- System scans curated company career boards (Greenhouse, Lever, Ashby) and broad market APIs.
-- User reviews recommended listings and clicks "Prepare Application" on a selected job to copy it into the active workspace.
+Future SaaS:
 
-### 3. Tailoring & ATS Scoring
-- In the active Application workspace, user clicks "Analyze Fit."
-- System extracts requirements, compares them to the Master Profile, and outputs a transparent fit score.
-- System selects the best evidence (matching projects/skills) from the Master Profile and generates the resume, cover letter, and ATS quality report.
-- User reviews and clicks "Approve." The draft and document paths are saved to the Tracker.
+1. Visitor lands on marketing/auth entry.
+2. User signs up or logs in.
+3. New user completes onboarding profile.
+4. User lands on dashboard with next recommended action.
 
----
+## Core Journey 1 - Profile To Job Discovery
 
-## Core Journey 2 - V1.5 Interview Intelligence
+1. User opens Profile.
+2. User reviews or updates skills, projects, education, certifications, and target roles.
+3. System derives conservative target roles and preferred skills from verified evidence.
+4. User opens Job Discovery.
+5. User reviews target roles, locations, work mode, job type, freshness, and exclusions.
+6. User saves preferences.
+7. User chooses discovery source or all live sources.
+8. System fetches jobs, normalizes them, filters them, deduplicates them, and ranks them.
+9. User sees recommended jobs, verified-level jobs, and all results.
+10. User opens a job, verifies original source, and decides whether to prepare an application.
 
-This workflow is unlocked when an application's status in the Tracker changes to `Applied` or `Interview`.
+## Core Journey 2 - Selected Job To Application
 
-### 1. Prep Activation
-- User navigates to the **Tracker** page.
-- User updates the status of a saved application (e.g. Google - Software Engineer) to `Applied`.
-- An "Interview Prep" button becomes active next to that application record.
+1. User clicks Prepare Application on one selected job.
+2. App loads that job into the Application workspace.
+3. User reviews company, role, source URL, and job description.
+4. User clicks Analyze fit.
+5. System analyzes the JD, matches the profile, and calculates fit.
+6. User reviews matched skills, missing skills, score, and recommendation.
+7. User confirms whether temporary profile gaps should be included.
+8. System generates resume, cover letter, and ATS quality report.
+9. User reviews generated materials.
+10. User approves saving PDFs/text and tracker record.
+11. App stores the application draft and source metadata.
 
-### 2. Contextual Question Generation
-- User clicks "Interview Prep" to open the contextual interview dashboard.
-- PathPilot sends the matching context (Master Profile + Tailored Resume + Job Description + Company Name) to the AI engine.
-- System generates custom practice categories:
-  - **Resume Questions**: Focusing on project claims made on the specific tailored PDF.
-  - **JD Questions**: Technical drills targeting the job description's required tools.
-  - **Behavioral Questions**: Prompts tailored to the role type.
-  - **Company Briefs**: Insights on the target company's current technologies.
-- User writes preparation notes and practices answering the prompts.
+## Core Journey 3 - Manual Job Input
 
----
+1. User opens Application.
+2. User pastes a job description or enters a public job URL.
+3. App validates whether the input is a complete job detail page.
+4. User runs fit analysis.
+5. App follows the same match, generate, review, and track flow.
 
-## Core Journey 3 - V2.0 Application Automation (Future)
+## Core Journey 4 - Tracker Review
 
-This journey represents future browser-automation features:
-- User selects a job and clicks "Auto-Apply."
-- PathPilot starts a headless browser, navigates to the application form, auto-fills details from the Master Profile, uploads the tailored resume PDF, and saves the submission status to the Tracker.
+1. User opens Tracker.
+2. User sees approved application drafts and job-ranking history.
+3. User filters or reviews applications.
+4. User checks generated document paths, scores, source URL, and status.
+5. Future: user updates outcome such as applied, interview, rejected, offer.
+
+## Empty States
+
+- No profile: prompt user to create or confirm a profile before discovery.
+- No job preferences: show suggested preferences from profile and ask user to save.
+- No discovery results: explain which filters were too strict and suggest broadening location, freshness, or source.
+- No tracker records: tell user to prepare and approve an application first.
+
+## Error States
+
+- LLM auth/quota error: stop retrying and show user-safe provider message.
+- Job URL blocked or incomplete: ask user to paste the job description.
+- Provider timeout: isolate failed provider and show partial results.
+- No source configured: explain which environment variables enable providers.
+- PDF generation issue: use fallback renderer when possible.
+
+## Redirect Logic
+
+- Prepare Application: Job Discovery to Application with selected job loaded.
+- Generate and approve: Application remains visible and tracker record is created.
+- View tracker: user manually opens Tracker after approval.
+- Reset job: clears current application workspace but does not delete tracker history.
