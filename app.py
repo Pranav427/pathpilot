@@ -66,7 +66,6 @@ from job_discovery import (
     JoobleJobProvider,
     LeverJobProvider,
     LocalSampleJobProvider,
-    SearchApiGoogleJobsProvider,
     SerpApiGoogleJobsProvider,
     TARGET_DISCOVERY_RESULTS,
     clear_discovery_provider_caches,
@@ -80,8 +79,6 @@ from job_discovery import (
     parse_greenhouse_boards,
     parse_lever_sites,
     serpapi_is_configured,
-    searchapi_is_configured,
-    google_jobs_is_configured,
 )
 from job_search import (
     action_label,
@@ -2573,7 +2570,7 @@ def render_job_discovery_content():
     jooble_configured = jooble_is_configured()
     serpapi_api_key = os.getenv("SERPAPI_API_KEY", "").strip()
     searchapi_api_key = os.getenv("SEARCHAPI_API_KEY", "").strip()
-    google_jobs_configured = google_jobs_is_configured()
+    google_jobs_configured = serpapi_is_configured()
     early_career_sources_configured = early_career_sources_enabled()
     sample_jobs_enabled = os.getenv(
         "APPLYSMART_ENABLE_SAMPLE_JOBS",
@@ -2699,14 +2696,14 @@ def render_job_discovery_content():
         discover_label = "Search broad job market"
         spinner_label = "Searching Jooble for target roles..."
     elif source == "Google Jobs search":
-        if searchapi_is_configured():
+        if serpapi_is_configured():
             st.success(
                 f"Google Jobs search is enabled through SearchApi.io. {PRODUCT_NAME} "
                 "queries role and location combinations, then normalizes postings "
                 "from major platforms and company pages into the same ranking "
                 "pipeline."
             )
-            provider = SearchApiGoogleJobsProvider(searchapi_api_key)
+            provider = SerpApiGoogleJobsProvider(serpapi_api_key)
         else:
             st.success(
                 f"Google Jobs search is enabled through SerpAPI. {PRODUCT_NAME} "
@@ -2747,8 +2744,8 @@ def render_job_discovery_content():
                 )
             )
         if google_jobs_configured:
-            if searchapi_is_configured():
-                live_providers.append(SearchApiGoogleJobsProvider(searchapi_api_key))
+            if serpapi_is_configured():
+                live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
             else:
                 live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
         provider = CombinedJobProvider(live_providers)
@@ -2799,8 +2796,8 @@ def render_job_discovery_content():
         source in {"Google Jobs search", "All live sources"}
         and google_jobs_configured
     ):
-        provider_name = "SearchApi.io" if searchapi_is_configured() else "SerpAPI"
-        provider_url = "https://www.searchapi.io/google-jobs-api" if searchapi_is_configured() else "https://serpapi.com/google-jobs-api"
+        provider_name = "SerpAPI"
+        provider_url = "https://serpapi.com/google-jobs-api"
         st.caption(
             f"Google Jobs results are provided through [{provider_name}]({provider_url}) and may include "
             "listings from LinkedIn, Naukri, Indeed, and company career pages "
@@ -2869,11 +2866,13 @@ def render_job_discovery_content():
                         stored_count = ingest_provider_jobs(
                             provider,
                             preferences,
+                            user_id=st.session_state.current_user_id,
                         )
                         st.session_state.refresh_timestamps[pref_key] = datetime.now(timezone.utc).replace(tzinfo=None)
                     jobs, rejections = discover_jobs(
                         preferences,
                         StoredJobProvider(
+                            user_id=st.session_state.current_user_id,
                             seen_within_days=discovery_inventory_window_days(
                                 preferences
                             )
