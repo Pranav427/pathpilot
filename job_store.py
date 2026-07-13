@@ -23,6 +23,7 @@ def init_job_store(db_path: str = JOB_STORE_DB_PATH) -> None:
             f"""
             CREATE TABLE IF NOT EXISTS {JOB_STORE_TABLE} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 0,
                 provider_job_id TEXT NOT NULL,
                 source TEXT NOT NULL,
                 company_name TEXT NOT NULL,
@@ -43,10 +44,21 @@ def init_job_store(db_path: str = JOB_STORE_DB_PATH) -> None:
             )
             """
         )
+        # Migrate: add user_id column if it was missing (old schema)
+        existing_cols = {
+            row[1]
+            for row in conn.execute(
+                f"PRAGMA table_info({JOB_STORE_TABLE})"
+            ).fetchall()
+        }
+        if "user_id" not in existing_cols:
+            conn.execute(
+                f"ALTER TABLE {JOB_STORE_TABLE} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0"
+            )
         conn.execute(
             f"""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_discovered_jobs_identity
-            ON {JOB_STORE_TABLE} (source, provider_job_id)
+            ON {JOB_STORE_TABLE} (user_id, source, provider_job_id)
             """
         )
         conn.execute(
@@ -85,9 +97,10 @@ def _job_to_row(job: DiscoveredJob) -> dict:
 def upsert_discovered_jobs(
     jobs: list[DiscoveredJob],
     *,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
 ) -> int:
-    """Upserts normalized jobs and returns the number of rows processed."""
+    """Upserts normalized jobs for a specific user and returns the number of rows processed."""
     init_job_store(db_path)
     now = datetime.utcnow().isoformat(timespec="seconds")
     live_jobs = [
@@ -99,18 +112,18 @@ def upsert_discovered_jobs(
             conn.execute(
                 f"""
                 INSERT INTO {JOB_STORE_TABLE} (
-                    provider_job_id, source, company_name, job_title, location,
-                    work_mode, job_type, experience_level, posted_date,
+                    user_id, provider_job_id, source, company_name, job_title,
+                    location, work_mode, job_type, experience_level, posted_date,
                     job_description, date_label, freshness_verified, source_url,
                     apply_url, raw_json, first_seen_at, last_seen_at
                 ) VALUES (
-                    :provider_job_id, :source, :company_name, :job_title,
+                    :user_id, :provider_job_id, :source, :company_name, :job_title,
                     :location, :work_mode, :job_type, :experience_level,
                     :posted_date, :job_description, :date_label,
                     :freshness_verified, :source_url, :apply_url, :raw_json,
                     :first_seen_at, :last_seen_at
                 )
-                ON CONFLICT(source, provider_job_id) DO UPDATE SET
+                ON CONFLICT(user_id, source, provider_job_id) DO UPDATE SET
                     company_name = excluded.company_name,
                     job_title = excluded.job_title,
                     location = excluded.location,
@@ -128,6 +141,7 @@ def upsert_discovered_jobs(
                 """,
                 {
                     **row,
+                    "user_id": user_id,
                     "first_seen_at": now,
                     "last_seen_at": now,
                 },
@@ -144,10 +158,11 @@ def _parse_date(value: str) -> date:
 
 def list_stored_jobs(
     *,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
     seen_within_days: int = 7,
 ) -> list[DiscoveredJob]:
-    """Returns recently ingested normalized jobs."""
+    """Returns recently ingested normalized jobs for the given user."""
     init_job_store(db_path)
     cutoff = (
         datetime.utcnow() - timedelta(days=max(1, int(seen_within_days)))
@@ -162,10 +177,11 @@ def list_stored_jobs(
                    apply_url
             FROM {JOB_STORE_TABLE}
             WHERE last_seen_at >= ?
+              AND user_id = ?
               AND source != 'Local sample catalog'
             ORDER BY last_seen_at DESC, id DESC
             """,
-            (cutoff,),
+            (cutoff, user_id),
         ).fetchall()
     return [
         DiscoveredJob(
@@ -223,15 +239,18 @@ class StoredJobProvider:
     def __init__(
         self,
         *,
+        user_id: int = 0,
         db_path: str = JOB_STORE_DB_PATH,
         seen_within_days: int = 7,
     ):
+        self.user_id = user_id
         self.db_path = db_path
         self.seen_within_days = seen_within_days
 
     def discover(self, preferences: JobPreferences) -> list[DiscoveredJob]:
         del preferences
         return list_stored_jobs(
+            user_id=self.user_id,
             db_path=self.db_path,
             seen_within_days=self.seen_within_days,
         )
@@ -241,8 +260,9 @@ def ingest_provider_jobs(
     provider: JobDiscoveryProvider,
     preferences: JobPreferences,
     *,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
 ) -> int:
     """Fetches provider jobs once and stores their normalized representation."""
     jobs = provider.discover(preferences)
-    return upsert_discovered_jobs(jobs, db_path=db_path)
+    return upsert_discovered_jobs(jobs, user_id=user_id, db_path=db_path)
