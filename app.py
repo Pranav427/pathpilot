@@ -1270,6 +1270,18 @@ def extract_text_from_file(file_obj) -> str:
                 raise ValueError(f"Error reading TXT: {e}")
 
 
+def on_discover_jobs_click():
+    st.session_state.onboarding_step = 1
+    st.session_state.onboarding_temp_profile = None
+    st.session_state.navigation = "Opportunities"
+
+
+def on_save_profile_click(profile_data):
+    save_user_profile(st.session_state.current_user_id, profile_data, st.session_state.current_persona_name)
+    st.session_state.session_profile = profile_data
+    st.session_state.navigation = "Opportunities"
+
+
 def render_profile():
     render_page_header(
         "Candidate Profile",
@@ -1934,10 +1946,7 @@ def render_profile():
                 unsafe_allow_html=True
             )
             
-            if st.button("Discover Jobs ➔", type="primary", use_container_width=True, key="btn_onb_discover"):
-                st.session_state.onboarding_step = 1
-                st.session_state.onboarding_temp_profile = None
-                st.session_state.navigation = "Opportunities"
+            if st.button("Discover Jobs ➔", type="primary", use_container_width=True, key="btn_onb_discover", on_click=on_discover_jobs_click):
                 st.rerun()
             return
 
@@ -2297,48 +2306,47 @@ def render_profile():
         v_interests = [line.strip() for line in v_interest_str.split("\n") if line.strip()]
         
         st.write("") # Spacer
-        save_profile = st.button(
+        # Convert skill_fields
+        skills_dict = {}
+        for category, area_value in skill_fields.items():
+            skills_dict[category] = [s.strip() for s in area_value.split(",") if s.strip()]
+        
+        updated_profile = {
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "location": location,
+            "linkedin": linkedin,
+            "github": github,
+            "portfolio": portfolio,
+            "objective": objective,
+            "skills": skills_dict,
+            "experience": updated_exp,
+            "projects": updated_proj,
+            "education": updated_educ,
+            "certifications": v_certs,
+            "courses": v_courses,
+            "achievements": v_ach,
+            "publications": v_pub,
+            "volunteer_experience": v_vol,
+            "languages": v_lang,
+            "awards": v_awards,
+            "areas_of_interest": v_interests
+        }
+
+        save_disabled = not name.strip() or not objective.strip()
+
+        if save_disabled:
+            st.error("Name and Professional summary are required fields.")
+
+        st.button(
             "Save Profile Changes 💾",
             type="primary",
             use_container_width=True,
+            disabled=save_disabled,
+            on_click=on_save_profile_click,
+            args=(updated_profile,)
         )
-        if save_profile:
-            if not name or not objective:
-                st.error("Name and Professional summary are required fields.")
-            else:
-                # Convert skill_fields
-                skills_dict = {}
-                for category, area_value in skill_fields.items():
-                    skills_dict[category] = [s.strip() for s in area_value.split(",") if s.strip()]
-                
-                updated_profile = {
-                    "name": name,
-                    "email": email,
-                    "phone": phone,
-                    "location": location,
-                    "linkedin": linkedin,
-                    "github": github,
-                    "portfolio": portfolio,
-                    "objective": objective,
-                    "skills": skills_dict,
-                    "experience": updated_exp,
-                    "projects": updated_proj,
-                    "education": updated_educ,
-                    "certifications": v_certs,
-                    "courses": v_courses,
-                    "achievements": v_ach,
-                    "publications": v_pub,
-                    "volunteer_experience": v_vol,
-                    "languages": v_lang,
-                    "awards": v_awards,
-                    "areas_of_interest": v_interests
-                }
-                
-                save_user_profile(st.session_state.current_user_id, updated_profile, st.session_state.current_persona_name)
-                st.session_state.session_profile = updated_profile
-                st.session_state.navigation = "Opportunities"
-                st.success("Profile saved successfully! Redirecting to Opportunities...")
-                st.rerun()
 
         profile = active_profile()
 
@@ -3436,14 +3444,12 @@ def render_workspace():
             with company_col:
                 company = st.text_input(
                     "Company *",
-                    value=st.session_state.company_name,
                     placeholder="Example: Magnit",
                     key=f"manual_company_input_{form_revision}",
                 )
             with role_col:
                 role = st.text_input(
                     "Job title *",
-                    value=st.session_state.job_title,
                     placeholder="Example: Associate Software Engineer",
                     key=f"manual_job_title_input_{form_revision}",
                 )
@@ -3454,7 +3460,6 @@ def render_workspace():
                 source_url_key = f"manual_source_url_input_{form_revision}"
                 source_url = st.text_input(
                     "Public job URL",
-                    value=st.session_state.source_url,
                     placeholder="https://company.com/careers/job",
                     key=source_url_key,
                 )
@@ -3476,20 +3481,17 @@ def render_workspace():
                 
                 job_description = st.text_area(
                     "Extracted job description",
-                    value=st.session_state.job_description if st.session_state.source_url == source_url else "",
                     height=200,
                     key=f"manual_url_desc_input_{form_revision}",
                 )
             else:
                 source_url = st.text_input(
                     "Job posting URL (optional)",
-                    value=st.session_state.source_url,
                     placeholder="https://company.com/careers/job",
                     key=f"manual_pasted_url_input_{form_revision}",
                 )
                 job_description = st.text_area(
                     "Job description *",
-                    value=st.session_state.job_description,
                     height=200,
                     placeholder="Paste the complete responsibilities, requirements, and qualifications.",
                     key=f"manual_pasted_desc_input_{form_revision}",

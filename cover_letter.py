@@ -363,10 +363,21 @@ def generate_cover_letter(
     )
 
     publications = profile.get("publications", [])
-    pub_text = (
-        f"Published in {publications[0]['publisher']} ({publications[0]['conference']})"
-        if publications else ""
-    )
+    pub_text = ""
+    if publications:
+        pub = publications[0]
+        if isinstance(pub, dict):
+            pub_title = pub.get("title", "")
+            pub_publisher = pub.get("publisher", "")
+            pub_conf = pub.get("conference", "")
+            details = []
+            if pub_publisher:
+                details.append(pub_publisher)
+            if pub_conf:
+                details.append(pub_conf)
+            pub_text = f"Published in {', '.join(details)}" if details else pub_title
+        else:
+            pub_text = str(pub)
     permanent_skills = profile.get("_permanent_skills", profile.get("skills", {}))
     confirmed_terms = profile.get("_application_confirmed_terms", [])
     evidence_matched_skills = [
