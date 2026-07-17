@@ -342,9 +342,9 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
         name = profile.get("name", "").strip()
         email = profile.get("email", "").strip()
         phone = profile.get("phone", "").strip()
-        linkedin = profile.get("linkedin", "").strip()
-        github = profile.get("github", "").strip()
-        portfolio = profile.get("portfolio", "").strip()
+        linkedin = clean_url(profile.get("linkedin", ""))
+        github = clean_url(profile.get("github", ""))
+        portfolio = clean_url(profile.get("portfolio", ""))
         
         contact_info = []
         if email: contact_info.append(email)
@@ -360,26 +360,93 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
         if name or contact_info:
             lines.extend(["", ""])
 
+    # 1. Professional Summary
     lines.extend([
         "PROFESSIONAL SUMMARY",
         resume_content.get("professional_summary", ""),
         "",
-        "SKILLS",
     ])
-    for category, skills in resume_content.get("skills", {}).items():
-        lines.append(f"{category}: {', '.join(skills)}")
-    lines.extend(["", "PROJECTS"])
+
+    # 2. Education (Extracted from profile)
+    if profile and profile.get("education"):
+        lines.append("EDUCATION")
+        for edu in profile.get("education", []):
+            degree = edu.get("degree", "").strip()
+            inst = edu.get("institution", "").strip()
+            year = edu.get("year", "").strip()
+            grade = edu.get("grade", "").strip()
+            lines.append(f"• {degree} — {inst} ({year})")
+            if grade:
+                lines.append(f"  Grade: {grade}")
+        lines.append("")
+
+    # 3. Experience (if any in profile)
+    if profile and profile.get("experience"):
+        lines.append("EXPERIENCE")
+        for exp in profile.get("experience", []):
+            title = exp.get("title", "").strip()
+            company = exp.get("company", "").strip()
+            duration = exp.get("duration", "").strip()
+            lines.append(f"• {title} at {company} ({duration})")
+            for highlight in exp.get("highlights", []):
+                lines.append(f"  - {highlight.strip()}")
+        lines.append("")
+
+    # 4. Projects (tailored bullets)
+    lines.append("PROJECTS")
     for project in resume_content.get("projects", []):
-        lines.append(project.get("name", "Project"))
-        lines.append(
-            f"{project.get('domain', '')} | Tools: "
-            f"{', '.join(project.get('tools', []))}"
-        )
+        pname = project.get("name", "Project").strip()
+        domain = project.get("domain", "").strip()
+        tools = project.get("tools", [])
+        
+        header = pname
+        if domain:
+            header += f" ({domain})"
+        lines.append(f"• {header}")
+        if tools:
+            lines.append(f"  Tools: {', '.join(tools)}")
         for bullet in project.get("bullets", []):
-            lines.append(f"- {bullet}")
-    lines.extend(["", "CERTIFICATIONS"])
+            lines.append(f"  - {bullet.strip()}")
+    lines.append("")
+
+    # 5. Skills
+    lines.append("SKILLS")
+    for category, skills in resume_content.get("skills", {}).items():
+        # Clean up '(familiarity)' labels for a cleaner plain text resume
+        clean_skills = [
+            re.sub(r"\s*\(familiarity\)\s*$", "", s, flags=re.IGNORECASE)
+            for s in skills
+        ]
+        lines.append(f"• {category}: {', '.join(clean_skills)}")
+    lines.append("")
+
+    # 6. Courses (from profile)
+    if profile and profile.get("courses"):
+        lines.append("COURSES")
+        for course in profile.get("courses", []):
+            cname = course.get("name", "").strip()
+            provider = course.get("provider", "").strip()
+            desc = course.get("description", "").strip()
+            lines.append(f"• {cname} — {provider}")
+            if desc:
+                lines.append(f"  {desc}")
+        lines.append("")
+
+    # 7. Publications (if any in profile)
+    if profile and profile.get("publications"):
+        lines.append("PUBLICATIONS")
+        for pub in profile.get("publications", []):
+            title = pub.get("title", "").strip()
+            conf = pub.get("conference", pub.get("publisher", "")).strip()
+            year = pub.get("year", "").strip()
+            lines.append(f"• \"{title}\" — Published in {conf} ({year})")
+        lines.append("")
+
+    # 8. Certifications
+    lines.append("CERTIFICATIONS")
     for cert in resume_content.get("certifications", []):
-        lines.append(f"- {cert}")
+        lines.append(f"• {cert.strip()}")
+
     return "\n".join(line for line in lines if line is not None)
 
 
