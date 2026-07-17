@@ -47,13 +47,6 @@ def clean_resume_style(text: str) -> str:
         "\u2013": "-",
         " -- ": ", ",
         " - ": ", ",
-        "hands-on": "practical",
-        "AI-native": "AI focused",
-        "early-career": "",
-        "cutting-edge": "modern",
-        "production-ready": "production focused",
-        "results-driven": "motivated",
-        "passionate": "interested",
         "recent computer science graduate": "Computer Science graduate",
         "recent B.Tech graduate": "B.Tech graduate",
         "completed multiple data science internships": (
@@ -384,27 +377,16 @@ Return this exact JSON structure:
 }}
 
 STRICT RULES:
-- Do NOT invent companies, jobs, or work experience
-- Do NOT claim multiple internships unless they appear in verified Experience
-- Prefer "training and projects" over "internships" when experience is training-based
-- Use ONLY facts from the candidate profile
-- Include only skills the candidate actually has; do not invent any
-- User-confirmed familiarity may appear only in the Skills section
-- Label confirmed terms as familiarity when wording permits
-- Never describe user-confirmed familiarity as internship, project, professional, extensive, production, or hands-on experience
-- Project tools and bullet highlights must be selected exclusively from the permanent project records. Do not invent, alter, or add any achievements, numbers, or technical tasks. Every bullet point must exist in the profile record.
-- Each bullet max 20 words
-- Summary exactly 2-3 sentences
-- Use simple human wording, not marketing language
-- Avoid "results-driven", "passionate", "cutting-edge", "transforming", "leveraging", and similar AI-polished phrases
-- Avoid dash-heavy phrasing; use commas or normal sentences instead
-- Do not overclaim professional experience
-- Do not use "recent graduate", "early-career", "fresher", or "aspiring"
-- Start the summary naturally with "Computer Science graduate" and verified strengths
-- Mention 93.91% accuracy and 15,000+ images ONLY if relevant to this job.
-- 93.91% and 15,000+ belong only to the face-authenticity project
-- Never assign those figures to the medical drug-review project or its algorithms
-- If the role is not ML, data science, AI, analytics, or computer vision, keep those metrics inside the project bullets only.
+- Do NOT invent companies, jobs, or work experience.
+- Do NOT claim multiple internships unless they appear in verified Experience.
+- Use ONLY facts from the candidate profile. Do not invent any new metrics, tools, or projects.
+- Write bullets using strong, active engineering verbs (e.g., Designed, Integrated, Architected, Optimized, Developed) rather than passive language (e.g., worked on, assisted with).
+- Weave programming languages, libraries, and frameworks naturally into the sentence flow to demonstrate technical context (e.g., "Developed and integrated a CNN hand gesture classification model using Python and OpenCV...").
+- Focus on technical depth and ownership. Explain what you built, how you built it, and why.
+- Each bullet point must be between 20 and 35 words to ensure professional description depth.
+- Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with expertise in...") and highlight key verified strengths.
+- User-confirmed familiarity terms belong only in the Skills section, labeled as familiarity. Never describe them as hands-on or professional experience.
+- Do not use empty marketing buzzwords ("passionate", "cutting-edge", "results-driven"). Let the technical descriptions convey your expertise.
 """
 
     client, model = llm_runtime()

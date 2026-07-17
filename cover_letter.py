@@ -50,18 +50,10 @@ def clean_cover_letter_style(text: str) -> str:
         "\u2013": ", ",
         " -- ": ", ",
         " - ": ", ",
-        "early-career": "early career",
-        "cutting-edge": "modern",
-        "production-ready": "production focused",
-        "hands-on": "practical",
-        "AI-native": "AI focused",
-        "next-generation": "new",
-        "more than anything": "a lot",
     }
     for old, new in replacements.items():
         cleaned = re.sub(re.escape(old), new, cleaned, flags=re.IGNORECASE)
 
-    cleaned = re.sub(r"(?<=\w)-(?=\w)", " ", cleaned)
     cleaned = re.sub(r"\s+,", ",", cleaned)
     cleaned = re.sub(r",\s*,+", ",", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
@@ -413,27 +405,17 @@ FACTUAL BOUNDARIES:
 - SkillDzire records foundational AI training only; do not claim OpenAI, Gemini, Claude API, LLM API, prompt-engineering, or agentic-workflow implementation there
 
 STRICT RULES:
-1. MAXIMUM 220 words total in body paragraphs
-2. Exactly 3 paragraphs
-3. Do NOT start with "I am writing to apply"
-4. Paragraph 1: Simple opening + who you are + why this role
-    5. Paragraph 2: Best relevant project with specific numbers and real methods
-6. Paragraph 3: Why this company specifically + confident call to action
-7. Sound human, calm, confident, and specific
-8. Tone: {tone}
-9. Do NOT mention https://, http://, or any URLs
-10. Do NOT say "results-driven" or "passionate learner"
-    11. Mention "93.91%" and "15,000+" only if relevant to this job
-    12. Mention Springer publication naturally only if relevant
-13. Do NOT use em dashes, en dashes, or dash-heavy phrases
-14. Avoid AI-sounding phrases like "cutting-edge", "revolutionizing", "more than anything", and "ready to hit the ground running"
-15. Avoid overclaiming. Do not imply professional GCP, RAG, or GenAI production experience unless clearly present in the candidate profile
-16. Write like an early-career candidate who is honest, capable, and eager to contribute
-17. Do not sound dramatic. Prefer direct sentences a real student would write
-18. User-confirmed familiarity is not work, internship, project, extensive, or production experience
-19. Do not say the candidate used a confirmed term at SkillDzire or in a project unless the permanent profile explicitly says so
-20. Preserve the exact job title "{job_title}" when naming the role
-21. Use the project with the strongest overlap to this job, not simply the first project in the profile
+1. MAX 220 words total in the body paragraphs.
+2. Exactly 3 paragraphs.
+3. Write using active, confident, and professional engineering tone.
+4. Do NOT start with "I am writing to apply" or similar generic openings.
+5. Paragraph 1: State who you are, your academic foundation (B.Tech, 8.87 CGPA), and why you want to work at this company specifically.
+6. Paragraph 2: Connect your best project (e.g. CNN gesture recognition) and research publication (Springer) to the requirements of the job, highlighting technical methods and your role as developer/author.
+7. Paragraph 3: Explain why this company's product or technical domain interests you, and close with a confident call to action.
+8. Do NOT mention any URLs or links.
+9. Avoid dramatic, overly promotional language ("results-driven", "passionate"). Let the facts (your CGPA, research, and project implementations) build your credibility.
+10. Ensure the transition between sentences is smooth and cohesive. Do not write choppy list-like paragraphs.
+11. Preserve the exact job title "{job_title}" when naming the role.
 
 OUTPUT FORMAT — follow this EXACTLY:
 Dear Hiring Team,
