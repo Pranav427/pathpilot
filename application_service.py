@@ -396,10 +396,11 @@ def build_tracker_notes(match: dict) -> str:
 
 
 def write_fallback_pdf(text: str, output_path: str) -> bool:
-    """Creates a readable PDF without relying on a system LaTeX install."""
+    """Creates a readable, beautifully formatted PDF without relying on a system LaTeX install."""
     try:
-        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
         from reportlab.lib.pagesizes import A4
+        from reportlab.lib.colors import HexColor
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.platypus import (
@@ -407,6 +408,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             Paragraph,
             SimpleDocTemplate,
             Spacer,
+            HRFlowable,
         )
         from xml.sax.saxutils import escape
     except ImportError:
@@ -414,65 +416,138 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
 
     try:
         styles = getSampleStyleSheet()
+        
+        # Define clean, professional color palette (slate grey & black)
+        primary_color = HexColor("#1A1A1A")
+        secondary_color = HexColor("#4A4A4A")
+        line_color = HexColor("#CCCCCC")
+
         body_style = ParagraphStyle(
             "PathPilotBody",
             parent=styles["BodyText"],
             fontName="Helvetica",
             fontSize=9.5,
-            leading=12,
+            leading=13,
+            textColor=primary_color,
             spaceAfter=4,
         )
+        
+        bullet_style = ParagraphStyle(
+            "PathPilotBullet",
+            parent=body_style,
+            leftIndent=15,
+            firstLineIndent=-10,
+            spaceAfter=3,
+        )
+
         heading_style = ParagraphStyle(
             "PathPilotHeading",
             parent=styles["Heading2"],
             fontName="Helvetica-Bold",
             fontSize=11,
             leading=14,
-            spaceBefore=7,
-            spaceAfter=4,
+            textColor=primary_color,
+            spaceBefore=8,
+            spaceAfter=2,
+            keepWithNext=True,
         )
+
         name_style = ParagraphStyle(
             "PathPilotName",
             parent=styles["Title"],
             fontName="Helvetica-Bold",
-            fontSize=16,
-            leading=19,
+            fontSize=18,
+            leading=22,
+            textColor=primary_color,
             alignment=TA_CENTER,
-            spaceAfter=8,
+            spaceAfter=4,
+        )
+        
+        contact_style = ParagraphStyle(
+            "PathPilotContact",
+            parent=body_style,
+            fontName="Helvetica",
+            fontSize=9,
+            leading=12,
+            textColor=secondary_color,
+            alignment=TA_CENTER,
+            spaceAfter=10,
         )
 
         document = SimpleDocTemplate(
             output_path,
             pagesize=A4,
-            rightMargin=16 * mm,
-            leftMargin=16 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
+            rightMargin=15 * mm,
+            leftMargin=15 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
             title="PathPilot application document",
         )
+        
         story = []
-        first_content_line = True
-        for raw_line in str(text).splitlines():
-            line = raw_line.strip()
+        lines = [line.strip() for line in str(text).splitlines()]
+        
+        # Header Parsing
+        first_line_idx = 0
+        while first_line_idx < len(lines) and not lines[first_line_idx]:
+            first_line_idx += 1
+            
+        if first_line_idx < len(lines):
+            # First non-empty line is Name
+            name_text = escape(lines[first_line_idx])
+            story.append(Paragraph(name_text, name_style))
+            first_line_idx += 1
+            
+            # Check if next line is Contact Info
+            if first_line_idx < len(lines) and lines[first_line_idx]:
+                contact_text = escape(lines[first_line_idx])
+                story.append(Paragraph(contact_text, contact_style))
+                first_line_idx += 1
+        
+        # Body Parsing
+        section_headers = {
+            "PROFESSIONAL SUMMARY",
+            "EDUCATION",
+            "EXPERIENCE",
+            "PROJECTS",
+            "SKILLS",
+            "COURSES",
+            "PUBLICATIONS",
+            "CERTIFICATIONS",
+        }
+
+        for idx in range(first_line_idx, len(lines)):
+            line = lines[idx]
             if not line:
-                story.append(Spacer(1, 4))
+                story.append(Spacer(1, 3))
                 continue
             if line == "\f":
                 story.append(PageBreak())
                 continue
 
             escaped_line = escape(line)
-            if first_content_line:
-                style = name_style
-                first_content_line = False
-            elif line.isupper() and len(line) <= 45:
-                style = heading_style
+            
+            # Identify headings
+            if line.upper() in section_headers:
+                story.append(Spacer(1, 6))
+                story.append(Paragraph(f"<b>{escaped_line}</b>", heading_style))
+                # Add horizontal divider rule under headings
+                story.append(HRFlowable(
+                    width="100%",
+                    thickness=0.8,
+                    color=line_color,
+                    spaceBefore=1,
+                    spaceAfter=5
+                ))
+            # Identify bullets
+            elif line.startswith(("- ", "• ")):
+                bullet_content = escape(line[2:].strip())
+                story.append(Paragraph(f"&#8226; {bullet_content}", bullet_style))
+            # Bold role details or companies
+            elif " — " in line or " at " in line:
+                story.append(Paragraph(f"<b>{escaped_line}</b>", body_style))
             else:
-                style = body_style
-
-            if line.startswith(("- ", "• ")):
-                escaped_line = f"&#8226; {escape(line[2:].strip())}"
-            story.append(Paragraph(escaped_line, style))
+                story.append(Paragraph(escaped_line, body_style))
 
         document.build(story)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
@@ -528,7 +603,7 @@ def save_application_draft(
 
         if not resume_ok:
             resume_ok = write_fallback_pdf(
-                resume_to_text(draft.resume),
+                resume_to_text(draft.resume, profile=draft.profile),
                 resume_pdf,
             )
         if not letter_ok:
