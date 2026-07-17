@@ -4,6 +4,8 @@ import json
 import os
 import webbrowser
 import hashlib
+import hmac
+import secrets
 from datetime import datetime, timezone
 import db_client
 
@@ -28,11 +30,49 @@ def init_db(db_path: str = DB_PATH):
     db_client.init_db_schema(db_path)
 
 
+def hash_password(password: str) -> str:
+    """Computes a secure, salted PBKDF2-SHA256 hash for a password."""
+    salt = secrets.token_hex(16)
+    iterations = 100000
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verifies a password against a stored PBKDF2 hash using timing-safe comparison."""
+    if not stored_hash or not stored_hash.startswith("pbkdf2_sha256$"):
+        # Fallback for old simple SHA256 hashes if any exist
+        old_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(old_hash, stored_hash)
+        
+    try:
+        parts = stored_hash.split("$")
+        if len(parts) != 4:
+            return False
+        _, iterations_str, salt, digest = parts
+        iterations = int(iterations_str)
+        
+        computed = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            iterations
+        ).hex()
+        return hmac.compare_digest(computed, digest)
+    except Exception:
+        return False
+
+
 def register_user(email: str, password_plain: str, db_path: str = DB_PATH) -> int:
     """Registers a new user and returns their user ID. Raises ValueError if email exists."""
     init_db(db_path)
     email = email.strip().lower()
-    pw_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
+    pw_hash = hash_password(password_plain)
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     
     try:
@@ -59,14 +99,21 @@ def authenticate_user(email: str, password_plain: str, db_path: str = DB_PATH) -
     """Verifies credentials and returns user ID, or None if invalid."""
     init_db(db_path)
     email = email.strip().lower()
-    pw_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
     
     rows = db_client.execute_query(
-        "SELECT id FROM users WHERE email=? AND password_hash=?",
-        (email, pw_hash),
+        "SELECT id, password_hash FROM users WHERE email=?",
+        (email,),
         db_path=db_path
     )
-    return int(rows[0]["id"]) if rows else None
+    if not rows:
+        return None
+        
+    user_id = rows[0]["id"]
+    stored_hash = rows[0]["password_hash"]
+    
+    if verify_password(password_plain, stored_hash):
+        return int(user_id)
+    return None
 
 
 def get_user_profile(user_id: int, profile_name: str = "Default", db_path: str = DB_PATH) -> dict | None:
