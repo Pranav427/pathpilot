@@ -1,6 +1,7 @@
 """Streamlit interface for the PathPilot application workflow."""
 
 import json
+import re
 import hashlib
 import logging
 import os
@@ -2411,6 +2412,41 @@ def render_job_discovery_content():
     else:
         current = profile_suggestions
 
+    if "discovery_preferred_skills_input" not in st.session_state:
+        st.session_state.discovery_preferred_skills_input = ", ".join(current.get("preferred_skills", []))
+
+    profile = active_profile()
+    candidate_skills = []
+    preferred_categories = [
+        "Programming Languages", "Languages", 
+        "Artificial Intelligence & Machine Learning", "Deep Learning & Computer Vision", 
+        "Machine Learning", "Libraries & Frameworks", "Databases", "Skills & Technologies Used",
+        "AI", "Data"
+    ]
+    for cat in preferred_categories:
+        for item in profile.get("skills", {}).get(cat, []):
+            clean_item = re.sub(r"\s*\(familiarity\)\s*$", "", str(item).strip(), flags=re.IGNORECASE)
+            if clean_item and clean_item.lower() not in {s.lower() for s in candidate_skills}:
+                candidate_skills.append(clean_item)
+
+    if candidate_skills:
+        st.caption("💡 **Quick Add Skills from Profile:**")
+        cols = st.columns(min(len(candidate_skills[:8]), 4))
+        for idx, skill in enumerate(candidate_skills[:8]):
+            with cols[idx % min(len(candidate_skills[:8]), 4)]:
+                current_skills_list = [s.strip().lower() for s in st.session_state.discovery_preferred_skills_input.split(",") if s.strip()]
+                is_selected = skill.lower() in current_skills_list
+                label = f"✓ {skill}" if is_selected else f"+ {skill}"
+                btn_type = "primary" if is_selected else "secondary"
+                if st.button(label, key=f"pill_skill_{idx}", type=btn_type, use_container_width=True):
+                    if is_selected:
+                        updated = [s.strip() for s in st.session_state.discovery_preferred_skills_input.split(",") if s.strip() and s.strip().lower() != skill.lower()]
+                    else:
+                        updated = [s.strip() for s in st.session_state.discovery_preferred_skills_input.split(",") if s.strip()]
+                        updated.append(skill)
+                    st.session_state.discovery_preferred_skills_input = ", ".join(updated)
+                    st.rerun()
+
     with st.form("job_preferences_form"):
         st.subheader("Search preferences")
         st.caption(
@@ -2461,7 +2497,7 @@ def render_job_discovery_content():
         with skills_col:
             preferred_skills = st.text_area(
                 "Preferred skills",
-                value=", ".join(current.get("preferred_skills", [])),
+                value=st.session_state.discovery_preferred_skills_input,
                 height=100,
                 placeholder="Python, Machine Learning, NLP, Deep Learning",
                 help=(
@@ -2506,6 +2542,7 @@ def render_job_discovery_content():
                 clear_discovery_results()
             st.session_state.job_preferences = updated_preferences
             st.session_state.preferences_saved = True
+            st.session_state.discovery_preferred_skills_input = preferred_skills
             if st.session_state.current_user_id:
                 pref_data = updated_preferences.to_dict() if hasattr(updated_preferences, "to_dict") else updated_preferences
                 st.session_state.session_profile["job_preferences"] = pref_data
