@@ -221,13 +221,76 @@ def grounded_professional_summary(profile: dict) -> str:
     )
 
 
-def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict) -> dict:
+def generate_application_strategy(job_analysis: dict, profile_summary: str) -> dict:
+    """Invokes LLM to define strategic positioning criteria for the candidate before fact selection."""
+    prompt = f"""
+You are a senior executive recruiter and hiring strategist.
+Analyze the target job requirements and define the optimal positioning strategy for this candidate.
+Return ONLY valid JSON matching the exact structure below. No explanation. No markdown.
+
+JOB DETAILS:
+Summary: {job_analysis.get("summary", "")}
+Skills: {job_analysis.get("skills", [])}
+Tools: {job_analysis.get("tools", [])}
+Keywords: {job_analysis.get("keywords", [])}
+
+CANDIDATE BASE:
+{profile_summary}
+
+Return this exact JSON structure:
+{{
+  "positioning_strategy": "Core theme of the application (1 sentence)",
+  "company_priorities": ["priority1", "priority2"],
+  "interviewer_takeaway": "Key message for hiring managers (1 sentence)",
+  "summary_focus": "Specific angle to highlight in professional summary (1 sentence)",
+  "project_focus": ["keyword1", "keyword2"],
+  "skills_focus": ["keyword1", "keyword2"],
+  "what_to_deemphasize": ["topic1", "topic2"]
+}}
+"""
+    client, model = llm_runtime()
+    try:
+        strategy = create_json_with_retry(
+            client,
+            model=model,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+            required_keys=[
+                "positioning_strategy",
+                "company_priorities",
+                "interviewer_takeaway",
+                "summary_focus",
+                "project_focus",
+                "skills_focus",
+                "what_to_deemphasize"
+            ],
+            source="Strategy generation"
+        )
+        return strategy
+    except Exception:
+        # Fallback empty strategy
+        return {
+            "positioning_strategy": "Highlight core software engineering skills.",
+            "company_priorities": [],
+            "interviewer_takeaway": "Motivated engineer capable of scaling software.",
+            "summary_focus": "Software development foundation.",
+            "project_focus": [],
+            "skills_focus": [],
+            "what_to_deemphasize": []
+        }
+
+
+def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict, strategy: dict = None) -> dict:
     """Deterministically filters and selects relevant profile nodes to build a factual resume manifest."""
     # 1. Select matching skills & tools
     matched_skills = set(str(s).lower() for s in match.get("matched_skills", []))
     matched_tools = set(str(t).lower() for t in match.get("matched_tools", []))
     matched_keywords = set(str(k).lower() for k in match.get("matched_keywords", []))
     all_matched = matched_skills.union(matched_tools).union(matched_keywords)
+
+    if strategy and strategy.get("skills_focus"):
+        for focus in strategy["skills_focus"]:
+            all_matched.add(str(focus).lower())
 
     profile_skills = profile.get("skills", {})
     manifest_skills = {}
@@ -265,6 +328,17 @@ def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict) -
             for t in proj.get("tools", []):
                 if term in t.lower():
                     score += 2
+        
+        # Strategic project alignment boosts
+        if strategy and strategy.get("project_focus"):
+            for keyword in strategy["project_focus"]:
+                keyword_clean = str(keyword).lower()
+                if keyword_clean in name or keyword_clean in domain or keyword_clean in proj.get("description", "").lower():
+                    score += 10
+                for h in proj.get("highlights", []):
+                    if keyword_clean in h.lower():
+                        score += 5
+                        
         scored_projects.append((score, proj))
     
     # Sort descending by score
@@ -319,16 +393,35 @@ def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict) -
 def generate_resume(job_analysis: dict, profile: dict, match: dict) -> dict:
     """Generates structured tailored resume content via Claude API."""
 
-    manifest = get_matching_fact_manifest(profile, job_analysis, match)
+    profile_summary = grounded_professional_summary(profile)
+    strategy = generate_application_strategy(job_analysis, profile_summary)
+    if not isinstance(strategy, dict) or "positioning_strategy" not in strategy:
+        strategy = {
+            "positioning_strategy": "Highlight core software engineering skills.",
+            "company_priorities": [],
+            "interviewer_takeaway": "Motivated engineer capable of scaling software.",
+            "summary_focus": "Software development foundation.",
+            "project_focus": [],
+            "skills_focus": [],
+            "what_to_deemphasize": []
+        }
+    manifest = get_matching_fact_manifest(profile, job_analysis, match, strategy)
+    
     experience_text = (
         manifest["experience"] if manifest["experience"]
         else "Fresher with strong academic projects and published research"
     )
 
     prompt = f"""
-You are a practical resume editor.
-Create clear, truthful, ATS-friendly resume content for this candidate.
+You are a senior executive recruiter and professional resume writer.
+Create clear, truthful, ATS-friendly resume content for this candidate aligned with the target APPLICATION STRATEGY.
 Return ONLY valid JSON. No markdown. No explanation.
+
+APPLICATION STRATEGY:
+Positioning: {strategy["positioning_strategy"]}
+Interviewer Takeaway: {strategy["interviewer_takeaway"]}
+Summary Focus: {strategy["summary_focus"]}
+What to De-emphasize: {strategy["what_to_deemphasize"]}
 
 JOB REQUIREMENTS:
 Skills: {job_analysis["skills"]}
@@ -353,7 +446,7 @@ Strongest Points: {match["strongest_points"]}
 
 Return this exact JSON structure:
 {{
-  "professional_summary": "2-3 sentences. NO name, NO email, NO phone, NO links.",
+  "professional_summary": "2-3 sentences. NO name, NO email, NO phone, NO links. Align narrative with the Summary Focus of the strategy.",
   "skills": {{
     "Languages": ["Python", "SQL"],
     "Machine Learning": ["scikit-learn", "Regression"],
@@ -368,7 +461,7 @@ Return this exact JSON structure:
       "domain": "Project domain",
       "tools": ["tool1", "tool2"],
       "bullets": [
-        "Strong action verb + specific method + specific tool + measurable result. Max 20 words."
+        "Strong action verb + specific method + specific tool + measurable result. Max 35 words."
       ]
     }}
   ],
