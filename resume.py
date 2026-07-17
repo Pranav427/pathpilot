@@ -63,9 +63,6 @@ def clean_resume_style(text: str) -> str:
             "data science training and practical ML projects"
         ),
         "structured internships": "structured training",
-        "transforming": "building",
-        "revolutionizing": "improving",
-        "leveraging": "using",
     }
     for old, new in replacements.items():
         cleaned = re.sub(re.escape(old), new, cleaned, flags=re.IGNORECASE)

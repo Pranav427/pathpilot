@@ -57,12 +57,6 @@ def clean_cover_letter_style(text: str) -> str:
         "AI-native": "AI focused",
         "next-generation": "new",
         "more than anything": "a lot",
-        "revolutionizing": "working on",
-        "hit the ground running": "contribute steadily",
-        "drawn to": "interested in",
-        "excites me": "interests me",
-        "exactly the challenge I\u2019m looking for": "a strong learning opportunity for me",
-        "exactly the challenge I'm looking for": "a strong learning opportunity for me",
     }
     for old, new in replacements.items():
         cleaned = re.sub(re.escape(old), new, cleaned, flags=re.IGNORECASE)
@@ -286,7 +280,9 @@ def enforce_cover_letter_constraints(text: str, profile: dict) -> str:
                 " ".join(sentences[cut2:]),
             ]
 
-    if len(paragraphs) == 3:
+    # Context-aware paragraph balancing: only trim if overall body exceeds 220 words
+    total_words = len(" ".join(paragraphs).split())
+    if total_words > 220 and len(paragraphs) == 3:
         paragraphs = [
             _cap_paragraph_words(paragraphs[0], 65),
             _cap_paragraph_words(paragraphs[1], 100),
