@@ -126,41 +126,11 @@ def suggest_job_preferences(profile: dict) -> dict:
         roles = ["Software Engineer"]
 
     skill_lookup = {skill.lower(): skill for skill in verified_skills}
-    # Extract all candidate skills from profile
-    candidate_skills = []
-    preferred_categories = [
-        "Programming Languages", "Languages", 
-        "Artificial Intelligence & Machine Learning", "Deep Learning & Computer Vision", 
-        "Machine Learning", "Libraries & Frameworks", "Databases", "Skills & Technologies Used",
-        "AI", "Data"
-    ]
-    for cat in preferred_categories:
-        for item in profile.get("skills", {}).get(cat, []):
-            clean_item = re.sub(r"\s*\(familiarity\)\s*$", "", str(item).strip(), flags=re.IGNORECASE)
-            if clean_item and clean_item.lower() not in {s.lower() for s in candidate_skills}:
-                candidate_skills.append(clean_item)
-
-    # 1. Prioritize candidate skills matching PREFERRED_SKILL_PRIORITY order
-    preferred_skills = []
-    candidate_skills_lower = {s.lower(): s for s in candidate_skills}
-    for prio in PREFERRED_SKILL_PRIORITY:
-        if prio.lower() in candidate_skills_lower:
-            preferred_skills.append(candidate_skills_lower[prio.lower()])
-
-    # 2. Append any other candidate skills not in the priority list
-    for s in candidate_skills:
-        if s.lower() not in {p.lower() for p in preferred_skills}:
-            preferred_skills.append(s)
-
-    # 3. Fallback to priority list lookup if candidate has no skills at all
-    if not preferred_skills:
-        preferred_skills = [
-            skill_lookup[skill.lower()]
-            for skill in PREFERRED_SKILL_PRIORITY
-            if skill.lower() in skill_lookup
-        ]
-        
-    preferred_skills = preferred_skills[:8]
+    preferred_skills = [
+        skill_lookup[skill.lower()]
+        for skill in PREFERRED_SKILL_PRIORITY
+        if skill.lower() in skill_lookup
+    ][:8]
 
     profile_location = str(profile.get("location", "")).strip()
     locations = (
