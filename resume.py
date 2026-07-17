@@ -228,11 +228,107 @@ def grounded_professional_summary(profile: dict) -> str:
     )
 
 
+def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict) -> dict:
+    """Deterministically filters and selects relevant profile nodes to build a factual resume manifest."""
+    # 1. Select matching skills & tools
+    matched_skills = set(str(s).lower() for s in match.get("matched_skills", []))
+    matched_tools = set(str(t).lower() for t in match.get("matched_tools", []))
+    matched_keywords = set(str(k).lower() for k in match.get("matched_keywords", []))
+    all_matched = matched_skills.union(matched_tools).union(matched_keywords)
+
+    profile_skills = profile.get("skills", {})
+    manifest_skills = {}
+    
+    # Extract only matching or top skills per category to keep it highly tailored
+    for category, skills in profile_skills.items():
+        cat_matches = []
+        cat_others = []
+        for skill in skills:
+            clean_s = re.sub(r"\s*\(familiarity\)\s*$", "", str(skill).strip(), flags=re.IGNORECASE)
+            if clean_s.lower() in all_matched:
+                cat_matches.append(clean_s)
+            else:
+                cat_others.append(clean_s)
+        # Prioritize matches, then fill up to 6 per category
+        combined = cat_matches + cat_others
+        if combined:
+            manifest_skills[category] = combined[:6]
+
+    # 2. Score and select top 2 projects
+    projects = profile.get("projects", [])
+    scored_projects = []
+    for proj in projects:
+        score = 0
+        name = proj.get("name", "").lower()
+        domain = proj.get("domain", "").lower()
+        
+        # Match keywords against name, domain, and highlights
+        for term in all_matched:
+            if term in name or term in domain:
+                score += 3
+            for h in proj.get("highlights", []):
+                if term in h.lower():
+                    score += 1
+            for t in proj.get("tools", []):
+                if term in t.lower():
+                    score += 2
+        scored_projects.append((score, proj))
+    
+    # Sort descending by score
+    scored_projects.sort(key=lambda x: x[0], reverse=True)
+    selected_projects = [item[1] for item in scored_projects[:2]]
+
+    # 3. Filter Experience/Jobs (limit to top 3 relevant)
+    experience = profile.get("experience", [])
+    selected_experience = []
+    for exp in experience:
+        score = 0
+        title = exp.get("title", "").lower()
+        company = exp.get("company", "").lower()
+        for term in all_matched:
+            if term in title or term in company:
+                score += 3
+            for h in exp.get("highlights", []):
+                if term in h.lower():
+                    score += 1
+        selected_experience.append((score, exp))
+    selected_experience.sort(key=lambda x: x[0], reverse=True)
+    manifest_experience = [item[1] for item in selected_experience[:3]]
+
+    # 4. Education
+    manifest_education = profile.get("education", [])[:2]
+
+    # 5. Certifications (Filter matching or top 4)
+    certs = profile.get("certifications", [])
+    selected_certs = []
+    for c in certs:
+        is_match = any(term in c.lower() for term in all_matched)
+        selected_certs.append((1 if is_match else 0, c))
+    selected_certs.sort(key=lambda x: x[0], reverse=True)
+    manifest_certs = [item[1] for item in selected_certs[:4]]
+
+    return {
+        "name": profile.get("name", ""),
+        "email": profile.get("email", ""),
+        "phone": profile.get("phone", ""),
+        "linkedin": profile.get("linkedin", ""),
+        "github": profile.get("github", ""),
+        "portfolio": profile.get("portfolio", ""),
+        "location": profile.get("location", ""),
+        "skills": manifest_skills,
+        "projects": selected_projects,
+        "experience": manifest_experience,
+        "education": manifest_education,
+        "certifications": manifest_certs,
+    }
+
+
 def generate_resume(job_analysis: dict, profile: dict, match: dict) -> dict:
     """Generates structured tailored resume content via Claude API."""
 
+    manifest = get_matching_fact_manifest(profile, job_analysis, match)
     experience_text = (
-        profile["experience"] if profile["experience"]
+        manifest["experience"] if manifest["experience"]
         else "Fresher with strong academic projects and published research"
     )
 
@@ -247,15 +343,15 @@ Tools: {job_analysis["tools"]}
 Keywords: {job_analysis["keywords"]}
 Summary: {job_analysis["summary"]}
 
-CANDIDATE:
-Name: {profile["name"]}
-Permanent Skills: {profile.get("_permanent_skills", profile["skills"])}
+CANDIDATE (FACT MANIFEST):
+Name: {manifest["name"]}
+Skills: {manifest["skills"]}
 User-confirmed familiarity for this application only: {profile.get("_application_confirmed_terms", [])}
 User-provided evidence/details for confirmed terms: {profile.get("_application_confirmed_details", {})}
 Experience: {experience_text}
-Projects: {profile["projects"]}
-Education: {profile["education"]}
-Certifications: {profile.get("certifications", [])}
+Projects: {manifest["projects"]}
+Education: {manifest["education"]}
+Certifications: {manifest["certifications"]}
 Achievements: {profile.get("achievements", [])}
 
 MATCH:
