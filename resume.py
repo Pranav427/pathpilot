@@ -371,42 +371,51 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
     if profile and profile.get("education"):
         lines.append("EDUCATION")
         for edu in profile.get("education", []):
-            degree = edu.get("degree", "").strip()
-            inst = edu.get("institution", "").strip()
-            year = edu.get("year", "").strip()
-            grade = edu.get("grade", "").strip()
-            lines.append(f"• {degree} — {inst} ({year})")
-            if grade:
-                lines.append(f"  Grade: {grade}")
+            if isinstance(edu, dict):
+                degree = edu.get("degree", "").strip()
+                inst = edu.get("institution", "").strip()
+                year = edu.get("year", "").strip()
+                grade = edu.get("grade", "").strip()
+                lines.append(f"• {degree} — {inst} ({year})")
+                if grade:
+                    lines.append(f"  Grade: {grade}")
+            else:
+                lines.append(f"• {str(edu).strip()}")
         lines.append("")
 
     # 3. Experience (if any in profile)
     if profile and profile.get("experience"):
         lines.append("EXPERIENCE")
         for exp in profile.get("experience", []):
-            title = exp.get("title", "").strip()
-            company = exp.get("company", "").strip()
-            duration = exp.get("duration", "").strip()
-            lines.append(f"• {title} at {company} ({duration})")
-            for highlight in exp.get("highlights", []):
-                lines.append(f"  - {highlight.strip()}")
+            if isinstance(exp, dict):
+                title = exp.get("title", "").strip()
+                company = exp.get("company", "").strip()
+                duration = exp.get("duration", "").strip()
+                lines.append(f"• {title} at {company} ({duration})")
+                for highlight in exp.get("highlights", []):
+                    lines.append(f"  - {highlight.strip()}")
+            else:
+                lines.append(f"• {str(exp).strip()}")
         lines.append("")
 
     # 4. Projects (tailored bullets)
     lines.append("PROJECTS")
     for project in resume_content.get("projects", []):
-        pname = project.get("name", "Project").strip()
-        domain = project.get("domain", "").strip()
-        tools = project.get("tools", [])
-        
-        header = pname
-        if domain:
-            header += f" ({domain})"
-        lines.append(f"• {header}")
-        if tools:
-            lines.append(f"  Tools: {', '.join(tools)}")
-        for bullet in project.get("bullets", []):
-            lines.append(f"  - {bullet.strip()}")
+        if isinstance(project, dict):
+            pname = project.get("name", "Project").strip()
+            domain = project.get("domain", "").strip()
+            tools = project.get("tools", [])
+            
+            header = pname
+            if domain:
+                header += f" ({domain})"
+            lines.append(f"• {header}")
+            if tools:
+                lines.append(f"  Tools: {', '.join(tools)}")
+            for bullet in project.get("bullets", []):
+                lines.append(f"  - {bullet.strip()}")
+        else:
+            lines.append(f"• {str(project).strip()}")
     lines.append("")
 
     # 5. Skills
@@ -424,22 +433,28 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
     if profile and profile.get("courses"):
         lines.append("COURSES")
         for course in profile.get("courses", []):
-            cname = course.get("name", "").strip()
-            provider = course.get("provider", "").strip()
-            desc = course.get("description", "").strip()
-            lines.append(f"• {cname} — {provider}")
-            if desc:
-                lines.append(f"  {desc}")
+            if isinstance(course, dict):
+                cname = course.get("name", "").strip()
+                provider = course.get("provider", "").strip()
+                desc = course.get("description", "").strip()
+                lines.append(f"• {cname} — {provider}")
+                if desc:
+                    lines.append(f"  {desc}")
+            else:
+                lines.append(f"• {str(course).strip()}")
         lines.append("")
 
     # 7. Publications (if any in profile)
     if profile and profile.get("publications"):
         lines.append("PUBLICATIONS")
         for pub in profile.get("publications", []):
-            title = pub.get("title", "").strip()
-            conf = pub.get("conference", pub.get("publisher", "")).strip()
-            year = pub.get("year", "").strip()
-            lines.append(f"• \"{title}\" — Published in {conf} ({year})")
+            if isinstance(pub, dict):
+                title = pub.get("title", "").strip()
+                conf = pub.get("conference", pub.get("publisher", "")).strip()
+                year = pub.get("year", "").strip()
+                lines.append(f"• \"{title}\" — Published in {conf} ({year})")
+            else:
+                lines.append(f"• {str(pub).strip()}")
         lines.append("")
 
     # 8. Certifications
