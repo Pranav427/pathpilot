@@ -45,7 +45,7 @@ def _job_to_row(job: DiscoveredJob) -> dict:
 def upsert_discovered_jobs(
     jobs: list[DiscoveredJob],
     *,
-    user_id: int = 1,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
 ) -> int:
     """Upserts normalized jobs for a user and returns the number of rows processed."""
@@ -106,7 +106,7 @@ def _parse_date(value: str) -> date:
 
 def list_stored_jobs(
     *,
-    user_id: int = 1,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
     seen_within_days: int = 7,
 ) -> list[DiscoveredJob]:
@@ -193,15 +193,18 @@ class StoredJobProvider:
     def __init__(
         self,
         *,
+        user_id: int = 0,
         db_path: str = JOB_STORE_DB_PATH,
         seen_within_days: int = 7,
     ):
+        self.user_id = user_id
         self.db_path = db_path
         self.seen_within_days = seen_within_days
 
     def discover(self, preferences: JobPreferences) -> list[DiscoveredJob]:
         del preferences
         return list_stored_jobs(
+            user_id=self.user_id,
             db_path=self.db_path,
             seen_within_days=self.seen_within_days,
         )
@@ -211,8 +214,9 @@ def ingest_provider_jobs(
     provider: JobDiscoveryProvider,
     preferences: JobPreferences,
     *,
+    user_id: int = 0,
     db_path: str = JOB_STORE_DB_PATH,
 ) -> int:
     """Fetches provider jobs once and stores their normalized representation."""
     jobs = provider.discover(preferences)
-    return upsert_discovered_jobs(jobs, db_path=db_path)
+    return upsert_discovered_jobs(jobs, user_id=user_id, db_path=db_path)
