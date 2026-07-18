@@ -514,24 +514,66 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             "COURSES",
             "PUBLICATIONS",
             "CERTIFICATIONS",
+            "ACHIEVEMENTS",
         }
 
-        for idx in range(first_line_idx, len(lines)):
+        from reportlab.platypus import Table, TableStyle
+
+        in_skills = False
+        skills_accumulator = []
+
+        def flush_skills(acc, story_list):
+            if not acc:
+                return
+            # Pair consecutive items up as a two-column table
+            pairs = []
+            for k in range(0, len(acc), 2):
+                left = acc[k]
+                right = acc[k+1] if k+1 < len(acc) else ""
+                left_para = Paragraph(left, body_style)
+                right_para = Paragraph(right, body_style)
+                pairs.append([left_para, right_para])
+            t = Table(pairs, colWidths=[250, 250])
+            t.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ]))
+            story_list.append(t)
+            acc.clear()
+
+        idx = first_line_idx
+        while idx < len(lines):
             line = lines[idx]
             if not line:
+                if in_skills:
+                    flush_skills(skills_accumulator, story)
                 story.append(Spacer(1, 3))
+                idx += 1
                 continue
             if line == "\f":
+                if in_skills:
+                    flush_skills(skills_accumulator, story)
                 story.append(PageBreak())
+                idx += 1
                 continue
 
             escaped_line = escape(line)
             
             # Identify headings
             if line.upper() in section_headers:
+                if in_skills:
+                    flush_skills(skills_accumulator, story)
+                
+                if line.upper() == "SKILLS":
+                    in_skills = True
+                else:
+                    in_skills = False
+
                 story.append(Spacer(1, 6))
                 story.append(Paragraph(f"<b>{escaped_line}</b>", heading_style))
-                # Add horizontal divider rule under headings
                 story.append(HRFlowable(
                     width="100%",
                     thickness=0.8,
@@ -541,13 +583,27 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
                 ))
             # Identify bullets
             elif line.startswith(("- ", "• ")):
+                if in_skills:
+                    flush_skills(skills_accumulator, story)
+                    in_skills = False
                 bullet_content = escape(line[2:].strip())
                 story.append(Paragraph(f"&#8226; {bullet_content}", bullet_style))
             # Bold role details or companies
             elif " — " in line or " at " in line:
+                if in_skills:
+                    flush_skills(skills_accumulator, story)
+                    in_skills = False
                 story.append(Paragraph(f"<b>{escaped_line}</b>", body_style))
             else:
-                story.append(Paragraph(escaped_line, body_style))
+                if in_skills:
+                    # Accumulate skills lines
+                    skills_accumulator.append(escaped_line)
+                else:
+                    story.append(Paragraph(escaped_line, body_style))
+            idx += 1
+
+        if in_skills:
+            flush_skills(skills_accumulator, story)
 
         document.build(story)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
