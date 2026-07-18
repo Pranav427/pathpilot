@@ -113,15 +113,39 @@ def sanitize_resume_facts(resume_content: dict, profile: dict) -> dict:
         if not source:
             continue
 
+        # Use the generated bullets if they exist, otherwise fall back to source highlights
+        gen_bullets = project.get("bullets", [])
+        if not gen_bullets or not isinstance(gen_bullets, list):
+            gen_bullets = source.get("highlights", [])
+
+        # Validate and clean generated bullets against hallucinated metrics
+        safe_bullets = []
+        source_highlights = source.get("highlights", [])
+        for i, gen_b in enumerate(gen_bullets[:3]):
+            gen_b_text = str(gen_b).strip()
+            # Extract numbers/percentages
+            numbers_in_gen = re.findall(r"\b\d+(?:[\.,]\d+)?%?", gen_b_text)
+            
+            has_hallucinated_metric = False
+            for num in numbers_in_gen:
+                # Allow matching numbers present in original highlights
+                in_highlights = any(num in str(h) for h in source_highlights)
+                if not in_highlights:
+                    has_hallucinated_metric = True
+                    break
+            
+            if has_hallucinated_metric or not gen_b_text:
+                if i < len(source_highlights):
+                    safe_bullets.append(clean_resume_style(source_highlights[i]))
+            else:
+                safe_bullets.append(clean_resume_style(gen_b_text))
+
         safe_projects.append(
             {
                 "name": source.get("name", ""),
                 "domain": source.get("domain", ""),
                 "tools": list(source.get("tools", [])),
-                "bullets": [
-                    clean_resume_style(bullet)
-                    for bullet in source.get("highlights", [])[:3]
-                ],
+                "bullets": safe_bullets,
             }
         )
     resume_content["projects"] = safe_projects
@@ -461,7 +485,7 @@ Return this exact JSON structure:
       "domain": "Project domain",
       "tools": ["tool1", "tool2"],
       "bullets": [
-        "Strong action verb + specific method + specific tool + measurable result. Max 35 words."
+        "Each bullet must follow this formula: [Action Verb] + [Specific Implementation/Architecture Detail] + [Technologies used] + [Measurable Technical Outcome]. Word limit: 20-35 words."
       ]
     }}
   ],
@@ -477,6 +501,7 @@ STRICT RULES:
 - Weave programming languages, libraries, and frameworks naturally into the sentence flow to demonstrate technical context (e.g., "Developed and integrated a CNN hand gesture classification model using Python and OpenCV...").
 - Focus on technical depth and ownership. Explain what you built, how you built it, and why.
 - Each bullet point must be between 20 and 35 words to ensure professional description depth.
+- Every project bullet must be structurally unique, avoiding template repetition. Emphasize actual software architectural decisions, data flow optimizations, or latency benchmarks.
 - Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with a B.Tech and 8.87 CGPA, co-author of Springer-published research in...") and highlight key verified strengths.
 - User-confirmed familiarity terms belong only in the Skills section, labeled as familiarity. Never describe them as hands-on or professional experience.
 - Do not use empty marketing buzzwords ("passionate", "cutting-edge", "results-driven"). Let the technical descriptions convey your expertise.

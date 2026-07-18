@@ -409,9 +409,9 @@ STRICT RULES:
 2. Exactly 3 paragraphs.
 3. Write using active, confident, and professional engineering tone.
 4. Do NOT start with "I am writing to apply" or similar generic openings.
-5. Paragraph 1: State who you are, your academic foundation (B.Tech, 8.87 CGPA), and why you want to work at this company specifically.
-6. Paragraph 2: Connect your best project (e.g. CNN gesture recognition) and research publication (Springer) to the requirements of the job, highlighting technical methods and your role as developer/author.
-7. Paragraph 3: Explain why this company's product or technical domain interests you, and close with a confident call to action.
+5. Paragraph 1: Start with a strong technical hook connecting your academic foundation (B.Tech, 8.87 CGPA) directly to the specific technical domain of {company_name}. Establish technical alignment immediately.
+6. Paragraph 2: Build a cohesive narrative around your hands-on project (CNN gesture recognition) and Springer-published research. Detail the implementation architecture (Python, PyTorch) and explain how this technical depth directly qualifies you for the {job_title} role.
+7. Paragraph 3: Explain why {company_name}'s product or engineering domain is the ideal environment to apply this technical foundation, and close with a confident call to action.
 8. Do NOT mention any URLs or links.
 9. Avoid dramatic, overly promotional language ("results-driven", "passionate"). Let the facts (your CGPA, research, and project implementations) build your credibility.
 10. Ensure the transition between sentences is smooth and cohesive. Do not write choppy list-like paragraphs.
