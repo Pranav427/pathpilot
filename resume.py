@@ -446,7 +446,7 @@ Strongest Points: {match["strongest_points"]}
 
 Return this exact JSON structure:
 {{
-  "professional_summary": "2-3 sentences. NO name, NO email, NO phone, NO links. Align narrative with the Summary Focus of the strategy.",
+  "professional_summary": "2-3 sentences. Start with a professional positioning statement detailing B.Tech and CGPA (if >= 8.5, e.g. 8.87) plus Springer-published research. Connect these credentials to the primary technical skillset of the job. NO first-person pronouns, NO name, NO contact info.",
   "skills": {{
     "Languages": ["Python", "SQL"],
     "Machine Learning": ["scikit-learn", "Regression"],
@@ -477,7 +477,7 @@ STRICT RULES:
 - Weave programming languages, libraries, and frameworks naturally into the sentence flow to demonstrate technical context (e.g., "Developed and integrated a CNN hand gesture classification model using Python and OpenCV...").
 - Focus on technical depth and ownership. Explain what you built, how you built it, and why.
 - Each bullet point must be between 20 and 35 words to ensure professional description depth.
-- Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with expertise in...") and highlight key verified strengths.
+- Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with a B.Tech and 8.87 CGPA, co-author of Springer-published research in...") and highlight key verified strengths.
 - User-confirmed familiarity terms belong only in the Skills section, labeled as familiarity. Never describe them as hands-on or professional experience.
 - Do not use empty marketing buzzwords ("passionate", "cutting-edge", "results-driven"). Let the technical descriptions convey your expertise.
 """
