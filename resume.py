@@ -503,12 +503,13 @@ STRICT RULES:
 - Do NOT claim multiple internships unless they appear in verified Experience.
 - Use ONLY facts from the candidate profile. Do not invent any new metrics, tools, or projects.
 - Write bullets using strong, active engineering verbs (e.g., Designed, Integrated, Architected, Optimized, Developed) rather than passive language (e.g., worked on, assisted with).
+- You MUST describe the projects provided in the manifest (up to 2). Never return an empty projects list. Focus on detailing the software architecture, modular integration, and optimization aspects to highlight transferable software engineering depth.
 - Weave programming languages, libraries, and frameworks naturally into the sentence flow to demonstrate technical context (e.g., "Developed and integrated a CNN hand gesture classification model using Python and OpenCV...").
 - Focus on technical depth and ownership. Explain what you built, how you built it, and why.
 - Each bullet point must be between 20 and 35 words to ensure professional description depth.
 - Every project bullet must be structurally unique, avoiding template repetition. Emphasize actual software architectural decisions, data flow optimizations, or latency benchmarks.
 - Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with a B.Tech and 8.87 CGPA, co-author of Springer-published research in...") and highlight key verified strengths.
-- User-confirmed familiarity terms belong only in the Skills section, labeled as familiarity. Never describe them as hands-on or professional experience.
+- User-confirmed familiarity terms belong in the Skills section (labeled as familiarity). You may weave these terms and their user-provided evidence/details into the professional summary or project highlights ONLY if you explicitly frame them as self-study, academic coursework, or academic project work. Never describe them as hands-on professional or commercial engineering experience.
 - Do not use empty marketing buzzwords ("passionate", "cutting-edge", "results-driven"). Let the technical descriptions convey your expertise.
 """
 

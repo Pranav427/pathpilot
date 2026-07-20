@@ -86,7 +86,10 @@ def unsupported_confirmed_claims(
             str(term).lower() in lower for term in confirmed_terms
         )
         if has_confirmed_term and any(marker in lower for marker in evidence_markers):
-            violations.append(sentence.strip())
+            # Allow if qualified as academic, self-study, or coursework
+            qualifiers = ("self-study", "self-taught", "coursework", "academic", "university", "classroom", "course", "studying", "studied")
+            if not any(q in lower for q in qualifiers):
+                violations.append(sentence.strip())
     return violations
 
 
@@ -429,6 +432,7 @@ STRICT RULES:
 9. Avoid dramatic, overly promotional language ("results-driven", "passionate"). Let the facts (your CGPA, research, and project implementations) build your credibility.
 10. Ensure the transition between sentences is smooth and cohesive. Do not write choppy list-like paragraphs.
 11. Preserve the exact job title "{job_title}" when naming the role.
+12. If user-provided evidence/details are present for confirmed familiarity terms, weave those terms and their context (e.g. self-study, academic coursework) into the body paragraphs where relevant. Frame them strictly as self-study, coursework, or academic learning, never as professional or commercial experience.
 
 OUTPUT FORMAT — follow this EXACTLY:
 Dear Hiring Team,
@@ -463,9 +467,7 @@ Rewrite the cover letter below using the same structure and truthful tone.
 The following terms are user-confirmed familiarity only:
 {confirmed_terms}
 
-Do not connect those terms to internships, employment, projects, production
-work, or professional experience. You may say the candidate is familiar with
-them or interested in developing them further.
+Do not connect those terms to internships, employment, commercial projects, production work, or professional experience. You may say the candidate is familiar with them, studied them in academic coursework, or did self-study on them.
 
 Unsupported sentences detected:
 {violations}
