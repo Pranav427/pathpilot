@@ -346,7 +346,11 @@ def generate_application_draft(
             profile["_application_confirmed_details"] = confirmed_details
         match = attach_confirmed_familiarity(match, confirmed_terms)
 
-    resume = generate_resume(job_analysis, profile, match)
+    from resume import generate_application_strategy, grounded_professional_summary
+    profile_summary = grounded_professional_summary(profile)
+    strategy = generate_application_strategy(job_analysis, profile_summary)
+
+    resume = generate_resume(job_analysis, profile, match, strategy=strategy)
     cover_letter = generate_cover_letter(
         job_analysis=job_analysis,
         profile=profile,
@@ -354,6 +358,7 @@ def generate_application_draft(
         company_name=company_name,
         job_title=job_title,
         tone=tone,
+        strategy=strategy,
     )
     ats_report = build_ats_report(
         build_final_resume_text(resume, profile),
@@ -417,27 +422,27 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
     try:
         styles = getSampleStyleSheet()
         
-        # Define clean, professional color palette (slate grey & black)
-        primary_color = HexColor("#1A1A1A")
-        secondary_color = HexColor("#4A4A4A")
-        line_color = HexColor("#CCCCCC")
+        # Define clean, professional color palette (slate charcoal & black)
+        primary_color = HexColor("#111111")
+        secondary_color = HexColor("#555555")
+        line_color = HexColor("#222222")
 
         body_style = ParagraphStyle(
             "PathPilotBody",
             parent=styles["BodyText"],
             fontName="Helvetica",
-            fontSize=9.5,
+            fontSize=9,
             leading=13,
             textColor=primary_color,
-            spaceAfter=4,
+            spaceAfter=3,
         )
         
         bullet_style = ParagraphStyle(
             "PathPilotBullet",
             parent=body_style,
-            leftIndent=15,
+            leftIndent=18,
             firstLineIndent=-10,
-            spaceAfter=3,
+            spaceAfter=2,
         )
 
         heading_style = ParagraphStyle(
@@ -447,7 +452,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             fontSize=11,
             leading=14,
             textColor=primary_color,
-            spaceBefore=8,
+            spaceBefore=6,
             spaceAfter=2,
             keepWithNext=True,
         )
@@ -459,19 +464,28 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             fontSize=18,
             leading=22,
             textColor=primary_color,
-            alignment=TA_CENTER,
-            spaceAfter=4,
+            alignment=TA_LEFT,
+            spaceAfter=2,
         )
         
         contact_style = ParagraphStyle(
             "PathPilotContact",
             parent=body_style,
             fontName="Helvetica",
-            fontSize=9,
-            leading=12,
+            fontSize=8.5,
+            leading=11,
             textColor=secondary_color,
-            alignment=TA_CENTER,
-            spaceAfter=10,
+            alignment=TA_LEFT,
+            spaceAfter=6,
+        )
+
+        meta_style = ParagraphStyle(
+            "PathPilotMeta",
+            parent=body_style,
+            fontName="Helvetica-Oblique",
+            fontSize=8.5,
+            leading=11,
+            textColor=secondary_color,
         )
 
         document = SimpleDocTemplate(
@@ -487,20 +501,22 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
         story = []
         lines = [line.strip() for line in str(text).splitlines()]
         
-        # Header Parsing
+        # Header Parsing - Left-Aligned Grid
         first_line_idx = 0
         while first_line_idx < len(lines) and not lines[first_line_idx]:
             first_line_idx += 1
             
         if first_line_idx < len(lines):
-            # First non-empty line is Name
             name_text = escape(lines[first_line_idx])
             story.append(Paragraph(name_text, name_style))
             first_line_idx += 1
             
             # Check if next line is Contact Info
             if first_line_idx < len(lines) and lines[first_line_idx]:
-                contact_text = escape(lines[first_line_idx])
+                contact_raw = lines[first_line_idx]
+                # Replace standard pipes or commas with bullet separators for visual design
+                contact_clean = contact_raw.replace(" | ", "  •  ").replace(" |", "  •  ")
+                contact_text = escape(contact_clean)
                 story.append(Paragraph(contact_text, contact_style))
                 first_line_idx += 1
         
@@ -550,7 +566,7 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
             if not line:
                 if in_skills:
                     flush_skills(skills_accumulator, story)
-                story.append(Spacer(1, 3))
+                story.append(Spacer(1, 2))
                 idx += 1
                 continue
             if line == "\f":
@@ -572,14 +588,14 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
                 else:
                     in_skills = False
 
-                story.append(Spacer(1, 6))
+                story.append(Spacer(1, 4))
                 story.append(Paragraph(f"<b>{escaped_line}</b>", heading_style))
                 story.append(HRFlowable(
                     width="100%",
                     thickness=0.8,
                     color=line_color,
                     spaceBefore=1,
-                    spaceAfter=5
+                    spaceAfter=4
                 ))
             # Identify bullets
             elif line.startswith(("- ", "• ")):
@@ -593,10 +609,24 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
                 if in_skills:
                     flush_skills(skills_accumulator, story)
                     in_skills = False
-                story.append(Paragraph(f"<b>{escaped_line}</b>", body_style))
+                parts = escaped_line.split(" — ")
+                if len(parts) == 2:
+                    # Format as: Title/Company (Bold) and Date/Loc (Oblique) side-by-side using Table
+                    left_para = Paragraph(f"<b>{parts[0]}</b>", body_style)
+                    right_para = Paragraph(parts[1], meta_style)
+                    t = Table([[left_para, right_para]], colWidths=[350, 150])
+                    t.setStyle(TableStyle([
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                        ('TOPPADDING', (0,0), (-1,-1), 1),
+                        ('LEFTPADDING', (0,0), (-1,-1), 0),
+                        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                    ]))
+                    story.append(t)
+                else:
+                    story.append(Paragraph(f"<b>{escaped_line}</b>", body_style))
             else:
                 if in_skills:
-                    # Accumulate skills lines
                     skills_accumulator.append(escaped_line)
                 else:
                     story.append(Paragraph(escaped_line, body_style))

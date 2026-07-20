@@ -264,6 +264,7 @@ CANDIDATE BASE:
 Return this exact JSON structure:
 {{
   "positioning_strategy": "Core theme of the application (1 sentence)",
+  "evidence_requirements": "Key projects, metrics, or credentials that must be surfaced as evidence (1 sentence)",
   "company_priorities": ["priority1", "priority2"],
   "interviewer_takeaway": "Key message for hiring managers (1 sentence)",
   "summary_focus": "Specific angle to highlight in professional summary (1 sentence)",
@@ -281,6 +282,7 @@ Return this exact JSON structure:
             messages=[{"role": "user", "content": prompt}],
             required_keys=[
                 "positioning_strategy",
+                "evidence_requirements",
                 "company_priorities",
                 "interviewer_takeaway",
                 "summary_focus",
@@ -295,6 +297,7 @@ Return this exact JSON structure:
         # Fallback empty strategy
         return {
             "positioning_strategy": "Highlight core software engineering skills.",
+            "evidence_requirements": "Focus on python engineering highlights and core project experience.",
             "company_priorities": [],
             "interviewer_takeaway": "Motivated engineer capable of scaling software.",
             "summary_focus": "Software development foundation.",
@@ -414,11 +417,12 @@ def get_matching_fact_manifest(profile: dict, job_analysis: dict, match: dict, s
     }
 
 
-def generate_resume(job_analysis: dict, profile: dict, match: dict) -> dict:
+def generate_resume(job_analysis: dict, profile: dict, match: dict, strategy: dict = None) -> dict:
     """Generates structured tailored resume content via Claude API."""
 
-    profile_summary = grounded_professional_summary(profile)
-    strategy = generate_application_strategy(job_analysis, profile_summary)
+    if strategy is None:
+        profile_summary = grounded_professional_summary(profile)
+        strategy = generate_application_strategy(job_analysis, profile_summary)
     if not isinstance(strategy, dict) or "positioning_strategy" not in strategy:
         strategy = {
             "positioning_strategy": "Highlight core software engineering skills.",
@@ -443,6 +447,7 @@ Return ONLY valid JSON. No markdown. No explanation.
 
 APPLICATION STRATEGY:
 Positioning: {strategy["positioning_strategy"]}
+Evidence Requirements: {strategy.get("evidence_requirements", "")}
 Interviewer Takeaway: {strategy["interviewer_takeaway"]}
 Summary Focus: {strategy["summary_focus"]}
 What to De-emphasize: {strategy["what_to_deemphasize"]}

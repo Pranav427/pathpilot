@@ -294,9 +294,15 @@ def generate_cover_letter(
     match: dict,
     company_name: str,
     job_title: str,
-    tone: str = "professional"
+    tone: str = "professional",
+    strategy: dict = None
 ) -> str:
     """Generates personalized cover letter using Claude API."""
+
+    if strategy is None:
+        from resume import generate_application_strategy, grounded_professional_summary
+        profile_summary = grounded_professional_summary(profile)
+        strategy = generate_application_strategy(job_analysis, profile_summary)
 
     experience_text = (
         f"{profile['experience'][0]['title']} at {profile['experience'][0]['company']}"
@@ -377,7 +383,14 @@ def generate_cover_letter(
 
     prompt = f"""
 You are an expert cover letter writer.
-Write a simple, natural, fresher-friendly cover letter.
+Write a simple, natural, fresher-friendly cover letter aligned with the target APPLICATION STRATEGY.
+
+APPLICATION STRATEGY:
+Positioning: {strategy.get("positioning_strategy", "")}
+Evidence Requirements: {strategy.get("evidence_requirements", "")}
+Interviewer Takeaway: {strategy.get("interviewer_takeaway", "")}
+Summary Focus: {strategy.get("summary_focus", "")}
+What to De-emphasize: {strategy.get("what_to_deemphasize", "")}
 
 JOB DETAILS:
 Job Title: {job_title}
