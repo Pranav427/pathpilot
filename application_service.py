@@ -265,7 +265,7 @@ def build_recruiter_message(
     match: dict,
 ) -> str:
     """Creates a short outreach note from verified profile and match evidence."""
-    name = str(profile.get("name") or "Pranav").strip()
+    name = str(profile.get("name") or "Candidate").strip()
     matched = unique_items(
         list(match.get("matched_skills", []))
         + list(match.get("matched_tools", []))

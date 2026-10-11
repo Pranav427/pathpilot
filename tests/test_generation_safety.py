@@ -85,18 +85,18 @@ def test_resume_style_replaces_unverified_multiple_internships():
 
 def test_cross_project_metrics_are_detected():
     text = (
-        "My Medical Condition Classification project processed 15,000 drug "
-        "reviews and achieved 93.91% accuracy using Logistic Regression."
+        "My Customer Review Sentiment Classifier processed 8,000 reviews "
+        "and achieved 94.5% accuracy using TF-IDF."
     )
 
     assert unsupported_profile_claims(text) == [text]
 
 
-def test_resume_removes_face_metrics_from_medical_project():
+def test_resume_removes_other_project_metrics():
     profile = {
         "projects": [
             {
-                "name": "Medical Condition Classification from Drug Reviews",
+                "name": "Customer Review Sentiment Classifier",
                 "domain": "Data Analytics and NLP",
                 "tools": ["Python", "TF-IDF"],
                 "highlights": [
@@ -109,10 +109,10 @@ def test_resume_removes_face_metrics_from_medical_project():
     resume = {
         "projects": [
             {
-                "name": "Medical Condition Classification from Drug Reviews",
+                "name": "Customer Review Sentiment Classifier",
                 "bullets": [
-                    "Achieved 93.91% accuracy",
-                    "Processed 15,000 reviews",
+                    "Achieved 94.5% accuracy",
+                    "Processed 8,000 reviews",
                     "Used TF-IDF",
                 ],
             }
@@ -122,8 +122,8 @@ def test_resume_removes_face_metrics_from_medical_project():
     sanitized = sanitize_resume_facts(resume, profile)
     bullets = sanitized["projects"][0]["bullets"]
 
-    assert all("93.91%" not in bullet for bullet in bullets)
-    assert all("15,000" not in bullet for bullet in bullets)
+    assert all("94.5%" not in bullet for bullet in bullets)
+    assert all("8,000" not in bullet for bullet in bullets)
     assert "Used TF-IDF feature extraction" in bullets
 
 
@@ -136,7 +136,7 @@ def test_cover_letter_constraints_fix_status_and_word_limit():
         "My Python foundation matches the position.\n\n"
         f"{long_paragraph}\n\n"
         "The company interests me. I welcome the opportunity to discuss the role.\n\n"
-        "Sincerely,\nObili Pranav"
+        "Sincerely,\nAmelia Clarke"
     )
 
     constrained = enforce_cover_letter_constraints(text, profile)
@@ -157,7 +157,7 @@ def test_cover_letter_constraints_fix_undergraduate_status():
         "My project work includes machine learning model evaluation and "
         "data preprocessing.\n\n"
         "I would welcome the opportunity to discuss the role.\n\n"
-        "Sincerely,\nObili Pranav"
+        "Sincerely,\nAmelia Clarke"
     )
 
     constrained = enforce_cover_letter_constraints(text, profile)
@@ -192,7 +192,7 @@ def test_application_service_sanitizes_generated_documents_end_to_end():
                 "name": profile["projects"][0]["name"],
                 "domain": "Invented domain",
                 "tools": ["Imaginary Tool"],
-                "bullets": ["Processed 15,000 reviews with 93.91% accuracy"],
+                "bullets": ["Processed 8,000 reviews with 94.5% accuracy"],
             }
         ],
         "certifications": ["Invented Certificate"],
@@ -203,7 +203,7 @@ def test_application_service_sanitizes_generated_documents_end_to_end():
         "As a final year Computer Science student, I am interested in this role.\n\n"
         "I built a verified machine learning project using Python.\n\n"
         "I welcome the opportunity to discuss my application.\n\n"
-        "Sincerely,\nObili Pranav"
+        "Sincerely,\nAmelia Clarke"
     )
 
     with (
@@ -236,7 +236,7 @@ def test_application_service_sanitizes_generated_documents_end_to_end():
 
 def test_application_prep_pack_is_grounded_in_match_context():
     profile = {
-        "name": "Obili Pranav",
+        "name": "Amelia Clarke",
         "skills": {},
     }
     match = {

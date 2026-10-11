@@ -6,7 +6,7 @@ import cover_letter
 import resume
 from document_standards import COVER_LETTER_MAX_WORDS, format_uk_date, sign_off_for
 
-FOUNDER_TERMS = ("8.87", "Springer", "CGPA", "B.Tech", "93.91", "SkillDzire")
+LEGACY_FOUNDER_TERMS = ("8.87", "Springer", "CGPA", "B.Tech", "93.91", "SkillDzire")
 
 PROFILE = {
     "name": "Amelia Clarke",
@@ -89,7 +89,7 @@ def test_cover_letter_prompt_has_no_founder_specific_content():
         cover_letter.generate_cover_letter(ANALYSIS, PROFILE, MATCH, "Acme", "Analyst", strategy=strategy)
 
     prompt = captured["prompt"]
-    assert not any(term in prompt for term in FOUNDER_TERMS)
+    assert not any(term in prompt for term in LEGACY_FOUNDER_TERMS)
     assert "British English" in prompt
     assert "Dear Hiring Manager" in prompt
 
@@ -110,14 +110,14 @@ def test_resume_prompt_has_no_founder_specific_content():
         resume.generate_resume(ANALYSIS, PROFILE, MATCH, strategy=strategy)
 
     prompt = captured["prompt"]
-    assert not any(term in prompt for term in FOUNDER_TERMS)
+    assert not any(term in prompt for term in LEGACY_FOUNDER_TERMS)
     assert "British English" in prompt
 
 
 def test_grounded_summary_uses_the_users_own_profile():
     summary = resume.grounded_professional_summary(PROFILE)
     assert "BSc Economics" in summary and "University of Leeds" in summary
-    assert not any(term in summary for term in FOUNDER_TERMS)
+    assert not any(term in summary for term in LEGACY_FOUNDER_TERMS)
     assert len(summary.split()) >= 20
 
 
@@ -130,7 +130,7 @@ def test_latex_cv_is_uk_style_and_profile_driven():
     assert tex.index("Experience") < tex.index("Projects") < tex.index("Skills")
     assert "Leeds, UK" in tex and "Dean's List 2024" in tex
     assert "Languages" not in tex  # none on the profile
-    assert not any(term in tex for term in FOUNDER_TERMS)
+    assert not any(term in tex for term in LEGACY_FOUNDER_TERMS)
 
 
 def test_languages_and_right_to_work_are_opt_in():

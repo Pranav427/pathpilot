@@ -82,7 +82,6 @@ def unsupported_confirmed_claims(
     """Finds sentences that turn familiarity into unsupported experience."""
     evidence_markers = (
         "internship",
-        "at skilldzire",
         "worked with",
         "worked on",
         "built with",
