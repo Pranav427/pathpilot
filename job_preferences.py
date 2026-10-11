@@ -89,6 +89,7 @@ class JobPreferences:
     preferred_skills: list[str] = field(default_factory=list)
     excluded_keywords: list[str] = field(default_factory=list)
     maximum_job_age_days: int = 14
+    needs_sponsorship: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -171,6 +172,7 @@ def build_job_preferences(
     preferred_skills: str = "",
     excluded_keywords: str = "",
     maximum_job_age_days: int = 14,
+    needs_sponsorship: bool = False,
 ) -> JobPreferences:
     """Builds and validates preferences submitted by a user."""
     parsed_locations = split_preference_items(locations)
@@ -185,6 +187,7 @@ def build_job_preferences(
         preferred_skills=split_preference_items(preferred_skills),
         excluded_keywords=split_preference_items(excluded_keywords),
         maximum_job_age_days=int(maximum_job_age_days),
+        needs_sponsorship=bool(needs_sponsorship),
     )
     validate_job_preferences(preferences)
     return preferences

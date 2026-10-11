@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from market import get_market
+from sponsorship import classify_sponsorship, sponsorship_label
 
 try:
     from dotenv import load_dotenv
@@ -152,7 +153,8 @@ def ensure_job_preferences(prefs) -> JobPreferences:
         valid_keys = {
             "target_roles", "locations", "experience_levels",
             "work_modes", "job_types", "preferred_skills",
-            "excluded_keywords", "maximum_job_age_days"
+            "excluded_keywords", "maximum_job_age_days",
+            "needs_sponsorship"
         }
         filtered = {k: v for k, v in prefs.items() if k in valid_keys}
         if not filtered:
@@ -886,7 +888,8 @@ def init_state():
             valid_keys = {
                 "target_roles", "locations", "experience_levels",
                 "work_modes", "job_types", "preferred_skills",
-                "excluded_keywords", "maximum_job_age_days"
+                "excluded_keywords", "maximum_job_age_days",
+            "needs_sponsorship"
             }
             filtered = {k: v for k, v in pref_dict.items() if k in valid_keys}
             job_preferences = JobPreferences(**filtered)
@@ -2536,6 +2539,14 @@ def render_job_discovery_content():
             value=current.get("maximum_job_age_days", 14),
             format="%d days",
         )
+        needs_sponsorship = st.checkbox(
+            "I will need visa sponsorship from an employer",
+            value=bool(current.get("needs_sponsorship", False)),
+            help=(
+                "Hides jobs whose advert clearly says no sponsorship. Jobs that "
+                "do not mention it are still shown, so check each advert."
+            ),
+        )
         save_preferences = st.form_submit_button(
             "Save job preferences",
             type="primary",
@@ -2553,6 +2564,7 @@ def render_job_discovery_content():
                 preferred_skills=preferred_skills,
                 excluded_keywords=excluded_keywords,
                 maximum_job_age_days=maximum_job_age_days,
+                needs_sponsorship=needs_sponsorship,
             )
             if updated_preferences != st.session_state.job_preferences:
                 clear_discovery_results()
@@ -3236,6 +3248,7 @@ def render_job_discovery_content():
                 job.location,
                 job.job_type,
                 job.source,
+                sponsorship_label(classify_sponsorship(f"{job.job_title} {job.job_description}")),
             ]
             st.caption(
                 " · ".join(item for item in metadata if str(item).strip())

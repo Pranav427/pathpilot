@@ -5,6 +5,7 @@ import os
 import re
 import time
 from market import get_market
+from sponsorship import NO_SPONSORSHIP, classify_sponsorship
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -2503,6 +2504,10 @@ def job_matches_preferences(
 ) -> tuple[bool, str]:
     """Applies deterministic freshness and preference filters."""
     today = today or date.today()
+    if preferences.needs_sponsorship and classify_sponsorship(
+        f"{job.job_title} {job.job_description}"
+    ) == NO_SPONSORSHIP:
+        return False, "Visa sponsorship not available"
     if is_broad_market_source(job.source):
         company_issue = broad_source_company_quality_issue(job.company_name)
         if company_issue:
