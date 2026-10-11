@@ -22,6 +22,17 @@ except ModuleNotFoundError:
                 if key and key not in os.environ:
                     os.environ[key] = value
 from analyzer import analyze_job
+from document_standards import (
+    COVER_LETTER_MAX_PARAGRAPHS,
+    COVER_LETTER_MAX_WORDS,
+    COVER_LETTER_MIN_PARAGRAPHS,
+    GENERIC_SALUTATION,
+    SALUTATION_PREFIXES,
+    SIGN_OFF_PREFIXES,
+    UK_ENGLISH_INSTRUCTION,
+    format_uk_date,
+    sign_off_for,
+)
 from profile import get_profile
 from matcher import match_profile_to_job
 from llm_utils import create_message_with_retry, get_llm_client, get_llm_model
@@ -184,44 +195,43 @@ def unsupported_profile_claims(text: str, profile: dict = None) -> list[str]:
     return violations
 
 
+def _is_salutation_or_sign_off(block: str, name: str) -> bool:
+    lower = block.lower().strip()
+    if lower == name:
+        return True
+    if lower.startswith(SALUTATION_PREFIXES) and len(lower.split()) <= 6:
+        return True
+    first_line = lower.splitlines()[0].rstrip(",").strip()
+    return first_line in SIGN_OFF_PREFIXES
+
+
 def cover_letter_body_paragraphs(text: str, profile: dict) -> list[str]:
-    """Extract body paragraphs without the greeting and signature."""
+    """Extract body paragraphs without the greeting and sign-off."""
     name = str(profile.get("name", "")).strip().lower()
     blocks = [
         block.strip()
         for block in re.split(r"\n\s*\n", str(text))
         if block.strip()
     ]
-    body = []
-    for block in blocks:
-        lower = block.lower().strip()
-        if lower in {
-            "dear hiring team,",
-            "dear hiring team",
-            "sincerely,",
-            "sincerely",
-            name,
-            f"sincerely,\n{name}",
-        }:
-            continue
-        if lower.startswith("sincerely,"):
-            continue
-        body.append(block)
-    return body
+    return [block for block in blocks if not _is_salutation_or_sign_off(block, name)]
 
 
 def cover_letter_format_issues(text: str, profile: dict) -> list[str]:
     """Return deterministic format and candidate-status violations."""
     paragraphs = cover_letter_body_paragraphs(text, profile)
     issues = []
-    if len(paragraphs) != 3:
+    if not (
+        COVER_LETTER_MIN_PARAGRAPHS <= len(paragraphs) <= COVER_LETTER_MAX_PARAGRAPHS
+    ):
         issues.append(
-            f"Cover letter has {len(paragraphs)} body paragraphs; expected 3."
+            f"Cover letter has {len(paragraphs)} body paragraphs; expected "
+            f"{COVER_LETTER_MIN_PARAGRAPHS}-{COVER_LETTER_MAX_PARAGRAPHS}."
         )
     word_count = len(" ".join(paragraphs).split())
-    if word_count > 220:
+    if word_count > COVER_LETTER_MAX_WORDS:
         issues.append(
-            f"Cover letter body has {word_count} words; maximum is 220."
+            f"Cover letter body has {word_count} words; maximum is "
+            f"{COVER_LETTER_MAX_WORDS}."
         )
     if profile_is_graduate(profile) and re.search(
         r"\b(final[- ]year|current)\b.{0,45}\bstudent\b"
@@ -254,41 +264,61 @@ def _cap_paragraph_words(paragraph: str, limit: int) -> str:
     return " ".join(kept).strip()
 
 
-def enforce_cover_letter_constraints(text: str, profile: dict) -> str:
-    """Normalize candidate status, structure, and the 220-word body limit."""
+def enforce_cover_letter_constraints(
+    text: str,
+    profile: dict,
+    salutation: str = GENERIC_SALUTATION,
+) -> str:
+    """Normalise status, structure (3-4 paragraphs), length and UK sign-off."""
     cleaned = normalize_candidate_status(clean_cover_letter_style(text), profile)
     paragraphs = cover_letter_body_paragraphs(cleaned, profile)
 
-    if len(paragraphs) > 3:
-        paragraphs = [paragraphs[0], paragraphs[1], " ".join(paragraphs[2:])]
-    elif len(paragraphs) < 3:
+    if len(paragraphs) > COVER_LETTER_MAX_PARAGRAPHS:
+        head = paragraphs[: COVER_LETTER_MAX_PARAGRAPHS - 1]
+        tail = " ".join(paragraphs[COVER_LETTER_MAX_PARAGRAPHS - 1 :])
+        paragraphs = head + [tail]
+    elif len(paragraphs) < COVER_LETTER_MIN_PARAGRAPHS:
         sentences = re.split(
             r"(?<=[.!?])\s+",
             " ".join(paragraphs).strip(),
         )
-        if len(sentences) >= 3:
-            cut1 = max(1, len(sentences) // 3)
-            cut2 = max(cut1 + 1, (len(sentences) * 2) // 3)
+        if len(sentences) >= COVER_LETTER_MIN_PARAGRAPHS:
+            size = len(sentences) / COVER_LETTER_MIN_PARAGRAPHS
             paragraphs = [
-                " ".join(sentences[:cut1]),
-                " ".join(sentences[cut1:cut2]),
-                " ".join(sentences[cut2:]),
+                " ".join(sentences[round(i * size) : round((i + 1) * size)])
+                for i in range(COVER_LETTER_MIN_PARAGRAPHS)
             ]
 
-    # Context-aware paragraph balancing: only trim if overall body exceeds 220 words
+    # Keep the total within the word limit by trimming each paragraph proportionally.
     total_words = len(" ".join(paragraphs).split())
-    if total_words > 220 and len(paragraphs) == 3:
+    if total_words > COVER_LETTER_MAX_WORDS:
+        ratio = COVER_LETTER_MAX_WORDS / total_words
         paragraphs = [
-            _cap_paragraph_words(paragraphs[0], 65),
-            _cap_paragraph_words(paragraphs[1], 100),
-            _cap_paragraph_words(paragraphs[2], 55),
+            _cap_paragraph_words(p, max(25, int(len(p.split()) * ratio)))
+            for p in paragraphs
         ]
 
     return (
-        "Dear Hiring Team,\n\n"
+        f"{salutation},\n\n"
         + "\n\n".join(paragraphs)
-        + f"\n\nSincerely,\n{profile.get('name', '')}"
+        + f"\n\n{sign_off_for(salutation)},\n{profile.get('name', '')}"
     ).strip()
+
+
+def _factual_boundaries(profile: dict) -> str:
+    """Per-project metric boundaries derived from the candidate's own profile."""
+    lines = [
+        "- Only use details that appear in the CANDIDATE section above.",
+        "- Never transfer a metric or result from one project or role to another.",
+    ]
+    for project in profile.get("projects") or []:
+        metrics = project.get("grounding_metrics") or []
+        name = project.get("name", "")
+        if name and metrics:
+            lines.append(f"- {', '.join(map(str, metrics))} belong only to \"{name}\".")
+        elif name:
+            lines.append(f"- \"{name}\" has no recorded metrics; do not attach numbers to it.")
+    return "\n".join(lines)
 
 
 def generate_cover_letter(
@@ -307,10 +337,11 @@ def generate_cover_letter(
         profile_summary = grounded_professional_summary(profile)
         strategy = generate_application_strategy(job_analysis, profile_summary)
 
+    experiences = profile.get("experience") or []
     experience_text = (
-        f"{profile['experience'][0]['title']} at {profile['experience'][0]['company']}"
-        if profile["experience"]
-        else "Fresher with strong academic projects and Springer-published research"
+        f"{experiences[0].get('title', '')} at {experiences[0].get('company', '')}"
+        if experiences
+        else "Early-career candidate with academic and project experience"
     )
 
     requirement_text = " ".join(
@@ -339,11 +370,8 @@ def generate_cover_letter(
         }
         return sum(1 for term in terms if term in project_text)
 
-    relevant_project = (
-        max(profile["projects"], key=project_relevance)
-        if profile["projects"]
-        else {}
-    )
+    projects = profile.get("projects") or []
+    relevant_project = max(projects, key=project_relevance) if projects else {}
     best_project = (
         f"{relevant_project.get('name', '')} -- "
         f"{relevant_project.get('description', '')}"
@@ -352,11 +380,13 @@ def generate_cover_letter(
     )
     project_highlights = relevant_project.get("highlights", [])
 
+    education = profile.get("education") or []
     education_text = (
-        f"{profile['education'][0]['degree']} -- "
-        f"{profile['education'][0]['institution']} -- "
-        f"{profile['education'][0]['grade']}"
-        if profile["education"] else "Not provided"
+        f"{education[0].get('degree', '')} -- "
+        f"{education[0].get('institution', '')} -- "
+        f"{education[0].get('grade', '')}"
+        if education and isinstance(education[0], dict)
+        else "Not provided"
     )
 
     publications = profile.get("publications", [])
@@ -384,9 +414,12 @@ def generate_cover_letter(
         }
     ]
 
+    factual_boundaries = _factual_boundaries(profile)
+
     prompt = f"""
-You are an expert cover letter writer.
-Write a simple, natural, fresher-friendly cover letter aligned with the target APPLICATION STRATEGY.
+You are an expert cover letter writer for UK graduate and early-career job applications.
+Write a natural, specific, honest cover letter aligned with the target APPLICATION STRATEGY.
+{UK_ENGLISH_INSTRUCTION}
 
 APPLICATION STRATEGY:
 Positioning: {strategy.get("positioning_strategy", "")}
@@ -402,7 +435,7 @@ Job Summary: {job_analysis["summary"]}
 Key Skills Needed: {job_analysis["skills"][:5]}
 
 CANDIDATE:
-Name: {profile["name"]}
+Name: {profile.get("name", "")}
 Background: {experience_text}
 Education: {education_text}
 Publication: {pub_text}
@@ -410,41 +443,37 @@ Permanent Skills: {permanent_skills}
 User-confirmed familiarity for this application only: {confirmed_terms}
 User-provided evidence/details for confirmed terms: {profile.get("_application_confirmed_details", {})}
 Evidence-backed Matched Skills: {evidence_matched_skills}
-Strongest Points: {match["strongest_points"]}
+Strongest Points: {match.get("strongest_points", [])}
 Best Project: {best_project}
 Project Highlights: {project_highlights}
 
 FACTUAL BOUNDARIES:
-- The Medical Condition Classification project has no recorded dataset-size or accuracy result
-- 15,000+ images and 93.91% accuracy belong only to the face-authenticity project
-- Do not assign 15,000+ or 93.91% to drug reviews, NLP, TF-IDF, Logistic Regression, Naive Bayes, or SVM
-- SkillDzire records foundational AI training only; do not claim OpenAI, Gemini, Claude API, LLM API, prompt-engineering, or agentic-workflow implementation there
+{factual_boundaries}
 
 STRICT RULES:
-1. MAX 220 words total in the body paragraphs.
-2. Exactly 3 paragraphs.
-3. Write using active, confident, and professional engineering tone.
-4. Do NOT start with "I am writing to apply" or similar generic openings.
-5. Paragraph 1: Start with a strong technical hook connecting your academic foundation (B.Tech, 8.87 CGPA) directly to the specific technical domain of {company_name}. Establish technical alignment immediately.
-6. Paragraph 2: Build a cohesive narrative around your hands-on project (CNN gesture recognition) and Springer-published research. Detail the implementation architecture (Python, PyTorch) and explain how this technical depth directly qualifies you for the {job_title} role.
-7. Paragraph 3: Explain why {company_name}'s product or engineering domain is the ideal environment to apply this technical foundation, and close with a confident call to action.
-8. Do NOT mention any URLs or links.
-9. Avoid dramatic, overly promotional language ("results-driven", "passionate"). Let the facts (your CGPA, research, and project implementations) build your credibility.
-10. Ensure the transition between sentences is smooth and cohesive. Do not write choppy list-like paragraphs.
-11. Preserve the exact job title "{job_title}" when naming the role.
-12. If user-provided evidence/details are present for confirmed familiarity terms, weave those terms and their context (e.g. self-study, academic coursework) into the body paragraphs where relevant. Frame them strictly as self-study, coursework, or academic learning, never as professional or commercial experience.
+1. Maximum {COVER_LETTER_MAX_WORDS} words in total across the body paragraphs.
+2. {COVER_LETTER_MIN_PARAGRAPHS} to {COVER_LETTER_MAX_PARAGRAPHS} short paragraphs.
+3. Do NOT start with "I am writing to apply" or similar generic openings.
+4. Paragraph 1: a specific hook that shows why this role at {company_name} fits the candidate, based on something concrete in the job details. Name the role "{job_title}" exactly.
+5. Paragraph 2: the candidate's strongest relevant evidence from their own profile (a project, placement, module or achievement), with a concrete example of what they did and what it shows. Use the candidate's actual field; do not assume a technical role.
+6. Paragraph 3 (and optionally 4): a second point on skills or fit, then a short, confident close inviting the next step.
+7. Use ONLY facts, numbers and tools present in the candidate details above. Never invent employers, grades, metrics or experience.
+8. Avoid clichés and buzzwords ("passionate", "results-driven", "team player", "hard-working").
+9. Do NOT mention URLs. Do NOT mention visa or right-to-work status unless it is in the candidate details.
+10. Write smooth connected prose, not lists.
+11. If user-provided evidence/details are present for confirmed familiarity terms, you may weave in those terms strictly as self-study, coursework or academic learning, never as professional or commercial experience.
 
-OUTPUT FORMAT — follow this EXACTLY:
-Dear Hiring Team,
+OUTPUT FORMAT, follow this EXACTLY:
+{GENERIC_SALUTATION},
 
-[Paragraph 1 text here]
+[Paragraph 1]
 
-[Paragraph 2 text here]
+[Paragraph 2]
 
-[Paragraph 3 text here]
+[Paragraph 3]
 
-Sincerely,
-{profile["name"]}
+{sign_off_for(GENERIC_SALUTATION)},
+{profile.get("name", "")}
 """
 
     client, model = llm_runtime()
@@ -462,7 +491,7 @@ Sincerely,
     )
     if violations:
         correction_prompt = f"""
-Rewrite the cover letter below using the same structure and truthful tone.
+Rewrite the cover letter below using the same structure, British English and a truthful tone. Keep it under {COVER_LETTER_MAX_WORDS} words.
 
 The following terms are user-confirmed familiarity only:
 {confirmed_terms}
@@ -473,9 +502,7 @@ Unsupported sentences detected:
 {violations}
 
 Factual boundaries:
-- The medical drug-review project has no recorded sample count or accuracy
-- 15,000+ images and 93.91% accuracy belong only to the face-authenticity project
-- SkillDzire does not prove implementation with OpenAI, Gemini, Claude API, LLM APIs, prompt engineering, or agentic workflows
+{factual_boundaries}
 
 COVER LETTER:
 {generated}
@@ -520,53 +547,26 @@ def build_latex_coverletter(
     phone    = s(clean_phone(profile.get("phone", "")))
     linkedin = s(clean_url(profile.get("linkedin", "")))
     portfolio = s(clean_url(profile.get("portfolio", "")))
-    today    = date.today().strftime("%B %d, %Y")
+    today    = format_uk_date()
     job_safe = s(job_title)
     co_safe  = s(company_name)
-    name_lower = profile.get("name", "").lower().strip()
 
-    # ── Extract body paragraphs only ──────────────────────────
-    # Build exact skip set — all lowercase for comparison
-    exact_skip = {
-        "dear hiring team,",
-        "dear hiring team",
-        "sincerely,",
-        "sincerely",
-        name_lower,
-        "hiring team,",
-        "hiring team",
-        f"sincerely, {name_lower}",
-        f"sincerely,\n{name_lower}",
-        f"sincerely,{name_lower}",
-    }
-
-    paragraphs = []
-    for para in cover_letter_content.split("\n\n"):
-        para = para.strip()
-        if not para:
-            continue
-
-        para_lower = para.strip().lower()
-
-        # Skip if entire paragraph is a salutation or closing
-        if para_lower in exact_skip:
-            continue
-
-        # Skip if paragraph starts with "sincerely" (catches all variants)
-        if para_lower.startswith("sincerely"):
-            continue
-
-        # Skip if paragraph starts with "dear hiring"
-        if para_lower.startswith("dear hiring"):
-            continue
-
-        # Skip if paragraph is only the candidate name
-        if para_lower == name_lower:
-            continue
-
-        paragraphs.append(s(para))
+    # ── Extract body paragraphs only (greeting and sign-off are re-added) ──
+    paragraphs = [s(p) for p in cover_letter_body_paragraphs(cover_letter_content, profile)]
+    salutation = GENERIC_SALUTATION
+    sign_off = sign_off_for(salutation)
 
     body = "\n\n".join(paragraphs)
+
+    header_lines = [
+        s(profile.get("location", "")),
+        s(email),
+        phone,
+        linkedin,
+        portfolio,
+    ]
+    header_block = "\\\\\n  ".join(line for line in header_lines if line)
+    header_block += ("\\\\[2pt]\n  " if header_block else "") + today
 
     return f"""\\documentclass[11pt, a4paper]{{article}}
 
@@ -601,17 +601,13 @@ def build_latex_coverletter(
 \\begin{{flushright}}
   {{\\large\\textbf{{{name}}}}}\\\\[3pt]
   \\small
-  {s(email)}\\\\
-  {phone}\\\\
-  {linkedin}\\\\
-  {portfolio}\\\\[2pt]
-  {today}
+  {header_block}
 \\end{{flushright}}
 
 \\vspace{{6pt}}
 
 % ===== RECIPIENT =====
-\\noindent Hiring Team\\\\
+\\noindent Hiring Manager\\\\
 \\noindent {co_safe}
 
 \\vspace{{8pt}}
@@ -622,7 +618,7 @@ def build_latex_coverletter(
 \\vspace{{8pt}}
 
 % ===== SALUTATION =====
-\\noindent Dear Hiring Team,
+\\noindent {salutation},
 
 \\vspace{{2pt}}
 
@@ -632,7 +628,7 @@ def build_latex_coverletter(
 \\vspace{{10pt}}
 
 % ===== CLOSING =====
-\\noindent Sincerely,
+\\noindent {sign_off},
 
 \\vspace{{22pt}}
 

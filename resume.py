@@ -21,6 +21,7 @@ except ModuleNotFoundError:
                 if key and key not in os.environ:
                     os.environ[key] = value
 from analyzer import analyze_job
+from document_standards import UK_ENGLISH_INSTRUCTION
 from profile import get_profile
 from matcher import match_profile_to_job
 from llm_utils import create_json_with_retry, get_llm_client, get_llm_model
@@ -220,29 +221,43 @@ def sanitize_resume_facts(resume_content: dict, profile: dict) -> dict:
     return resume_content
 
 
+def _top_skills(profile: dict, limit: int = 4) -> list[str]:
+    skills = profile.get("_permanent_skills", profile.get("skills", {})) or {}
+    flat: list[str] = []
+    for items in skills.values():
+        for item in items if isinstance(items, list) else []:
+            if str(item).strip() and str(item) not in flat:
+                flat.append(str(item).strip())
+    return flat[:limit]
+
+
 def grounded_professional_summary(profile: dict) -> str:
-    """Builds a concise summary only from durable profile evidence."""
-    projects = profile.get("projects", [])
-    project_names = [
+    """Builds a concise personal profile only from durable profile evidence."""
+    education = profile.get("education") or []
+    first = education[0] if education and isinstance(education[0], dict) else {}
+    degree = str(first.get("degree", "")).strip()
+    institution = str(first.get("institution", "")).strip()
+    skills = _top_skills(profile)
+    projects = [
         project.get("name", "")
-        for project in projects[:2]
+        for project in (profile.get("projects") or [])[:2]
         if project.get("name")
     ]
-    project_evidence = (
-        " Project work includes "
-        + " and ".join(project_names)
-        + "."
-        if project_names
-        else ""
+
+    opening = (
+        f"{degree} candidate at {institution}" if degree and institution
+        else (f"{degree} candidate" if degree else "Motivated early-career candidate")
     )
-    return (
-        "Computer Science graduate with foundations in software engineering, "
-        "artificial intelligence, machine learning, data analysis, and core "
-        "computer science concepts. Skilled in Python, SQL, Java, and C++ "
-        "through verified academic projects, structured training, and "
-        "technical coursework."
-        + project_evidence
-    )
+    sentences = [
+        f"{opening} with a strong academic foundation and practical project experience."
+    ]
+    if skills:
+        sentences.append(
+            "Skilled in " + ", ".join(skills) + " through verified coursework and projects."
+        )
+    if projects:
+        sentences.append("Project work includes " + " and ".join(projects) + ".")
+    return " ".join(sentences)
 
 
 def generate_application_strategy(job_analysis: dict, profile_summary: str) -> dict:
@@ -437,12 +452,13 @@ def generate_resume(job_analysis: dict, profile: dict, match: dict, strategy: di
     
     experience_text = (
         manifest["experience"] if manifest["experience"]
-        else "Fresher with strong academic projects and published research"
+        else "Early-career candidate; evidence comes from education, projects and achievements"
     )
 
     prompt = f"""
-You are a senior executive recruiter and professional resume writer.
-Create clear, truthful, ATS-friendly resume content for this candidate aligned with the target APPLICATION STRATEGY.
+You are a senior recruiter and professional CV writer for UK graduate and early-career applications.
+Create clear, truthful, ATS-friendly CV content for this candidate aligned with the target APPLICATION STRATEGY.
+{UK_ENGLISH_INSTRUCTION}
 Return ONLY valid JSON. No markdown. No explanation.
 
 APPLICATION STRATEGY:
@@ -475,14 +491,9 @@ Strongest Points: {match["strongest_points"]}
 
 Return this exact JSON structure:
 {{
-  "professional_summary": "2-3 sentences. Start with a professional positioning statement detailing B.Tech and CGPA (if >= 8.5, e.g. 8.87) plus Springer-published research. Connect these credentials to the primary technical skillset of the job. NO first-person pronouns, NO name, NO contact info.",
+  "professional_summary": "2-3 sentences. A personal profile that states the candidate's degree and institution (and grade only if it appears in Education), then their strongest verified strengths for THIS role. No first-person pronouns, NO name, NO contact info.",
   "skills": {{
-    "Languages": ["Python", "SQL"],
-    "Machine Learning": ["scikit-learn", "Regression"],
-    "Data Analysis": ["EDA", "Feature Engineering"],
-    "Libraries": ["pandas", "NumPy", "Matplotlib"],
-    "Tools": ["Jupyter Notebook", "GitHub"],
-    "Databases": ["MySQL"]
+    "Category name relevant to the candidate and role": ["skill from the candidate's verified skills"]
   }},
   "projects": [
     {{
@@ -490,7 +501,7 @@ Return this exact JSON structure:
       "domain": "Project domain",
       "tools": ["tool1", "tool2"],
       "bullets": [
-        "Each bullet must follow this formula: [Action Verb] + [Specific Implementation/Architecture Detail] + [Technologies used] + [Measurable Technical Outcome]. Word limit: 20-35 words."
+        "Each bullet follows: [Action Verb] + [what was done and how] + [tools or methods used] + [outcome, only if it appears in the profile]. 20-35 words."
       ]
     }}
   ],
@@ -499,18 +510,15 @@ Return this exact JSON structure:
 }}
 
 STRICT RULES:
-- Do NOT invent companies, jobs, or work experience.
-- Do NOT claim multiple internships unless they appear in verified Experience.
-- Use ONLY facts from the candidate profile. Do not invent any new metrics, tools, or projects.
-- Write bullets using strong, active engineering verbs (e.g., Designed, Integrated, Architected, Optimized, Developed) rather than passive language (e.g., worked on, assisted with).
-- You MUST describe the projects provided in the manifest (up to 2). Never return an empty projects list. Focus on detailing the software architecture, modular integration, and optimization aspects to highlight transferable software engineering depth.
-- Weave programming languages, libraries, and frameworks naturally into the sentence flow to demonstrate technical context (e.g., "Developed and integrated a CNN hand gesture classification model using Python and OpenCV...").
-- Focus on technical depth and ownership. Explain what you built, how you built it, and why.
-- Each bullet point must be between 20 and 35 words to ensure professional description depth.
-- Every project bullet must be structurally unique, avoiding template repetition. Emphasize actual software architectural decisions, data flow optimizations, or latency benchmarks.
-- Summary should be exactly 2-3 sentences, starting with a strong professional positioning statement (e.g. "Computer Science graduate with a B.Tech and 8.87 CGPA, co-author of Springer-published research in...") and highlight key verified strengths.
-- User-confirmed familiarity terms belong in the Skills section (labeled as familiarity). You may weave these terms and their user-provided evidence/details into the professional summary or project highlights ONLY if you explicitly frame them as self-study, academic coursework, or academic project work. Never describe them as hands-on professional or commercial engineering experience.
-- Do not use empty marketing buzzwords ("passionate", "cutting-edge", "results-driven"). Let the technical descriptions convey your expertise.
+- Do NOT invent employers, jobs, grades, modules or work experience.
+- Use ONLY facts from the candidate profile. Never invent metrics, tools or projects.
+- Skill categories must fit the candidate's own field (e.g. Technical, Software, Analysis, Languages, Tools, Research, Communication); do not assume a technology role.
+- Write bullets with strong active verbs (Designed, Led, Analysed, Built, Coordinated, Evaluated) rather than passive wording.
+- You MUST describe the projects provided in the manifest (up to 2). Never return an empty projects list; if the field is not technical, describe the transferable methods and skills used.
+- Each bullet is 20-35 words and structurally different from the others.
+- The summary is exactly 2-3 sentences with no first-person pronouns.
+- User-confirmed familiarity terms belong in Skills (labelled as familiarity). You may mention them in the summary or project highlights ONLY if framed as self-study, academic coursework or academic project work, never as professional experience.
+- Avoid empty buzzwords ("passionate", "results-driven", "cutting-edge", "team player").
 """
 
     client, model = llm_runtime()
@@ -546,6 +554,8 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
         portfolio = clean_url(profile.get("portfolio", ""))
         
         contact_info = []
+        location = profile.get("location", "").strip()
+        if location: contact_info.append(location)
         if email: contact_info.append(email)
         if phone: contact_info.append(phone)
         if linkedin: contact_info.append(linkedin)
@@ -556,12 +566,14 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
             lines.append(name.upper())
         if contact_info:
             lines.append(" | ".join(contact_info))
+        if profile.get("show_right_to_work") and str(profile.get("right_to_work", "")).strip():
+            lines.append(str(profile["right_to_work"]).strip())
         if name or contact_info:
             lines.extend(["", ""])
 
     # 1. Professional Summary
     lines.extend([
-        "PROFESSIONAL SUMMARY",
+        "PERSONAL PROFILE",
         resume_content.get("professional_summary", ""),
         "",
     ])
@@ -656,10 +668,27 @@ def resume_to_text(resume_content, profile: dict = None) -> str:
                 lines.append(f"• {str(pub).strip()}")
         lines.append("")
 
-    # 8. Certifications
-    lines.append("CERTIFICATIONS")
-    for cert in resume_content.get("certifications", []):
-        lines.append(f"• {cert.strip()}")
+    # 8. Languages (only when the profile has them)
+    languages = [str(l).strip() for l in (profile or {}).get("languages", []) if str(l).strip()]
+    if languages:
+        lines.append("LANGUAGES")
+        lines.append(", ".join(languages))
+        lines.append("")
+
+    # 9. Achievements (from the profile only)
+    achievements = [str(a).strip() for a in (profile or {}).get("achievements", []) if str(a).strip()][:4]
+    if achievements:
+        lines.append("ACHIEVEMENTS")
+        for achievement in achievements:
+            lines.append(f"• {achievement}")
+        lines.append("")
+
+    # 10. Certifications (only when present)
+    certifications = [str(c).strip() for c in resume_content.get("certifications", []) if str(c).strip()]
+    if certifications:
+        lines.append("CERTIFICATIONS")
+        for cert in certifications:
+            lines.append(f"• {cert}")
 
     return "\n".join(line for line in lines if line is not None)
 
@@ -679,13 +708,7 @@ def sanitize_summary(summary: str, profile: dict) -> str:
     cleaned = str(summary).replace("\n", " ").strip()
     cleaned = normalize_candidate_status(clean_resume_style(cleaned), profile)
     if any(item and item.lower() in cleaned.lower() for item in blocked):
-        return (
-            "Aspiring Data Scientist with practical experience in machine learning, "
-            "NLP, and statistical analysis. Built classification models achieving "
-            "93.91% accuracy on 15,000+ image samples, published in Springer "
-            "conference proceedings. Proficient in Python, scikit-learn, pandas, "
-            "NumPy, and SQL."
-        )
+        return grounded_professional_summary(profile)
     return cleaned
 
 
@@ -697,217 +720,218 @@ def first_sentence(text: str) -> str:
     return parts[0].strip() + "."
 
 
+def _as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _tex_bullets(items: list[str], limit: int) -> str:
+    lines = "".join(
+        f"  \\item\\small {esc(clean_resume_style(item))}\n"
+        for item in items[:limit]
+        if str(item).strip()
+    )
+    if not lines:
+        return ""
+    return (
+        "\\begin{itemize}[leftmargin=1.2em, topsep=1pt, itemsep=0pt, parsep=0pt]\n"
+        f"{lines}\\end{{itemize}}\n"
+    )
+
+
+def _tex_entry(left_title: str, left_sub: str, right_top: str, right_sub: str = "") -> str:
+    """Two-column entry: title/subtitle on the left, date/detail on the right."""
+    right = f"\\textbf{{{right_top}}}" if right_top else ""
+    if right_sub:
+        right += f"\\\\{right_sub}"
+    sub = f"\\\\\\textit{{{left_sub}}}" if left_sub else ""
+    return (
+        "\\vspace{2pt}\n"
+        "\\noindent\\begin{minipage}[t]{0.68\\linewidth}\n"
+        f"  \\textbf{{{left_title}}}{sub}\n"
+        "\\end{minipage}%\n"
+        "\\begin{minipage}[t]{0.32\\linewidth}\n"
+        f"  \\raggedleft\\small {right}\n"
+        "\\end{minipage}\n"
+    )
+
+
 def build_latex_resume(
     profile: dict,
     job_analysis: dict,
     match: dict,
     resume_content
 ) -> str:
-    """Builds a clean one-page professional LaTeX resume."""
+    """Builds a UK-style CV (A4, one page by default, two when content warrants)."""
 
-    # ── Basic info — strip all prefixes ──────────────────────
-    name     = esc(profile.get("name", ""))
-    email    = profile.get("email", "")
-    phone    = esc(clean_phone(profile.get("phone", "")))
+    # ── Header ────────────────────────────────────────────────
+    name = esc(profile.get("name", ""))
+    email = profile.get("email", "")
+    phone = esc(clean_phone(profile.get("phone", "")))
+    location = esc(profile.get("location", ""))
     linkedin = clean_url(profile.get("linkedin", ""))
-    github   = clean_url(profile.get("github", ""))
+    github = clean_url(profile.get("github", ""))
     portfolio = clean_url(profile.get("portfolio", ""))
 
-    # ── Fallback if resume_content not a dict ─────────────────
+    header_parts = []
+    if location:
+        header_parts.append(location)
+    if phone:
+        header_parts.append(phone)
+    if email:
+        header_parts.append(f"\\href{{mailto:{email}}}{{{esc(email)}}}")
+    for link in (linkedin, github, portfolio):
+        if link:
+            header_parts.append(f"\\href{{https://{link}}}{{{esc(link)}}}")
+    separator = "\\hspace{3pt}\\textbar\\hspace{3pt}"
+    header_line = separator.join(header_parts)
+
+    right_to_work = ""
+    if profile.get("show_right_to_work") and str(profile.get("right_to_work", "")).strip():
+        right_to_work = f"\\\\[1pt]\\small {esc(str(profile['right_to_work']).strip())}"
+
+    # ── Fallback if resume_content is not a dict ──────────────
     if not isinstance(resume_content, dict):
         resume_content = {
-            "professional_summary": (
-                "Aspiring Data Scientist and B.Tech Computer Science and Engineering "
-                "graduate with hands-on experience in machine learning, NLP, and "
-                "statistical analysis. Built classification models achieving 93.91% "
-                "accuracy on 15,000+ image samples, published in Springer proceedings."
-            ),
+            "professional_summary": grounded_professional_summary(profile),
             "skills": profile.get("skills", {}),
             "projects": [],
             "certifications": profile.get("certifications", []),
             "ats_notes": [],
         }
 
-    # ── Professional summary ──────────────────────────────────
-    tailored_summary = esc(
+    summary = esc(
         sanitize_summary(resume_content.get("professional_summary", ""), profile)
     )
 
-    # ── Skills — always read from profile dict ────────────────
-    # This guarantees correct key names and no empty rows
-    profile_skills = profile.get("skills", {})
-    matched_terms = (
-        list(match.get("matched_skills", []))
-        + list(match.get("matched_tools", []))
-        + list(match.get("matched_keywords", []))
-    )
+    sections = []
 
-    def get_skills(keys: list, limit: int = 7) -> str:
-        items = []
-        for key in keys:
-            items.extend(profile_skills.get(key, []))
+    sections.append(f"\\section{{Personal Profile}}\n\\small\n{summary}\n")
 
-        preferred = []
-        remaining = []
-        matched_norm = {str(term).lower() for term in matched_terms}
-        for item in items:
-            if item.lower() in matched_norm:
-                preferred.append(item)
-            else:
-                remaining.append(item)
-
-        unique = []
-        seen_s = set()
-        for item in preferred + remaining:
-            k = item.lower()
-            if k not in seen_s:
-                seen_s.add(k)
-                unique.append(item)
-        return esc(", ".join(unique[:limit]))
-
-    lang_line  = get_skills(["Programming Languages", "Languages"], 5)
-    ml_line    = get_skills(
-        [
-            "Artificial Intelligence & Machine Learning",
-            "Deep Learning & Computer Vision",
-            "Machine Learning",
-            "ML & AI",
-        ],
-        7,
-    )
-    ai_line    = get_skills(
-        ["AI & Application Development", "AI Engineering"],
-        4,
-    )
-    se_line    = get_skills(
-        ["Software Fundamentals", "Software Engineering"],
-        5,
-    )
-    data_line  = get_skills(["Data Analysis", "Data"], 6)
-    lib_line   = get_skills(["Libraries & Frameworks", "Libraries"], 7)
-    tools_line = get_skills(["Tools & Platforms", "Visualization Tools", "Tools"], 6)
-    db_line    = get_skills(["Databases"], 3)
-
-    # ── Experience / internships ──────────────────────────────
-    experience_tex = ""
-    priority_titles = ["Artificial Intelligence Intern", "Full Stack Development Intern"]
-    experiences = profile.get("experience", [])
-    selected_experiences = []
-    for title in priority_titles:
-        selected_experiences.extend(
-            exp for exp in experiences
-            if exp.get("title") == title and exp not in selected_experiences
+    # ── Education (first for students and graduates) ──────────
+    education_tex = ""
+    for edu in _as_list(profile.get("education"))[:3]:
+        if not isinstance(edu, dict):
+            education_tex += f"\\noindent\\small {esc(str(edu))}\\\\\n"
+            continue
+        year = esc(
+            str(edu.get("year", "")).replace("\u2013", "--").replace("\u2014", "--")
         )
-    for exp in experiences:
-        if len(selected_experiences) >= 3:
-            break
-        if exp not in selected_experiences:
-            selected_experiences.append(exp)
+        education_tex += _tex_entry(
+            esc(edu.get("degree", "")),
+            esc(edu.get("institution", "")),
+            year,
+            esc(edu.get("grade", "")),
+        )
+        modules = [str(m) for m in _as_list(edu.get("modules")) if str(m).strip()]
+        if modules:
+            education_tex += (
+                f"\\noindent\\small\\textit{{Relevant modules:}} {esc(', '.join(modules[:8]))}\\\\\n"
+            )
+    if education_tex:
+        sections.append(f"\\section{{Education}}\n\\small\n{education_tex}")
 
-    for exp in selected_experiences[:3]:
-        title = esc(exp.get("title", ""))
-        company = esc(exp.get("company", ""))
-        duration = esc(exp.get("duration", ""))
-        highlights = exp.get("highlights", [])
-
-        bullet_lines = ""
-        for h in highlights[:2]:
-            bullet_lines += f"  \\item\\small {esc(clean_resume_style(h))}\n"
-
-        experience_tex += f"""\\vspace{{2pt}}
-\\noindent\\begin{{minipage}}[t]{{0.70\\linewidth}}
-  \\textbf{{{title}}} \\enspace\\textbar\\enspace \\textit{{{company}}}
-\\end{{minipage}}%
-\\begin{{minipage}}[t]{{0.30\\linewidth}}
-  \\raggedleft\\small\\textbf{{{duration}}}
-\\end{{minipage}}
-\\begin{{itemize}}[leftmargin=1.2em, topsep=1pt, itemsep=0pt, parsep=0pt]
-{bullet_lines}\\end{{itemize}}
-"""
+    # ── Experience ────────────────────────────────────────────
+    experience_tex = ""
+    for exp in _as_list(profile.get("experience"))[:4]:
+        if not isinstance(exp, dict):
+            continue
+        experience_tex += _tex_entry(
+            esc(exp.get("title", "")),
+            esc(exp.get("company", "")),
+            esc(exp.get("duration", "")),
+        )
+        experience_tex += _tex_bullets(_as_list(exp.get("highlights")), 3)
+    if experience_tex:
+        sections.append(f"\\section{{Experience}}\n\\small\n{experience_tex}")
 
     # ── Projects ──────────────────────────────────────────────
     projects_tex = ""
     rendered_projects = resume_content.get("projects") or profile.get("projects", [])
-    for proj in rendered_projects[:2]:
-        pname   = esc(proj.get("name", ""))
-        ptools  = esc(", ".join(proj.get("tools", [])))
-        domain  = esc(proj.get("domain", ""))
-        bullets = proj.get("bullets") or proj.get("highlights", [])
-
-        bullet_lines = ""
-        for b in bullets[:3]:
-            bullet_lines += f"  \\item\\small {esc(clean_resume_style(b))}\n"
-
-        projects_tex += f"""\\vspace{{2pt}}
-\\noindent\\textbf{{{pname}}}\\\\[0pt]
-\\noindent\\small\\textit{{{domain}}}\\enspace\\textbar\\enspace\\textit{{Tools: {ptools}}}
-\\begin{{itemize}}[leftmargin=1.2em, topsep=1pt, itemsep=0pt, parsep=0pt]
-{bullet_lines}\\end{{itemize}}
-"""
-
-    # ── Education ─────────────────────────────────────────────
-    education_tex = ""
-    for edu in profile.get("education", [])[:2]:
-        degree  = esc(edu.get("degree", ""))
-        inst    = esc(edu.get("institution", ""))
-        year    = esc(
-            edu.get("year", "")
-            .replace("\u2013", "--")
-            .replace("\u2014", "--")
+    for proj in _as_list(rendered_projects)[:3]:
+        if not isinstance(proj, dict):
+            continue
+        tools = esc(", ".join(_as_list(proj.get("tools"))))
+        domain = esc(proj.get("domain", ""))
+        meta = " \\textbar{} ".join(
+            part for part in (domain, f"Tools: {tools}" if tools else "") if part
         )
-        grade   = esc(edu.get("grade", ""))
-
-        education_tex += f"""\\vspace{{2pt}}
-\\noindent\\begin{{minipage}}[t]{{0.65\\linewidth}}
-  \\textbf{{{degree}}}\\\\
-  \\textit{{{inst}}}
-\\end{{minipage}}%
-\\begin{{minipage}}[t]{{0.35\\linewidth}}
-  \\raggedleft
-  \\textbf{{{year}}}\\\\
-  {grade}
-\\end{{minipage}}\\\\[1pt]
-"""
-
-    # ── Certifications — deduplicated, em dash style ──────────
-    seen_c     = set()
-    cert_lines = []
-    preferred_certs = profile.get("certifications", [])[:5]
-
-    for cert in preferred_certs:
-        display = clean_resume_style(cert)
-        key = cert.strip().lower()
-        if key not in seen_c:
-            seen_c.add(key)
-            cert_lines.append(esc(display))
-
-    certs_tex = " \\\\\n".join(
-        [f"\\noindent\\small\\textbullet\\ {c}" for c in cert_lines]
-    )
-
-    # ── Achievements — max 3 ─────────────────────────────────
-    achievement_lines = []
-    preferred_achievements = [
-        "Research paper accepted and published in Springer conference proceedings (ICETCI-2025)",
-        "Achieved 93.91% accuracy in face authenticity detection project",
-        "Completed 240-hour Artificial Intelligence internship through SkillDzire / APSCHE",
-    ]
-    for ach in preferred_achievements[:3]:
-        achievement_lines.append(
-            f"\\noindent\\small\\textbullet\\ {esc(ach)}"
+        projects_tex += f"\\vspace{{2pt}}\n\\noindent\\textbf{{{esc(proj.get('name', ''))}}}"
+        if meta:
+            projects_tex += f"\\\\\\small\\textit{{{meta}}}"
+        projects_tex += "\n"
+        projects_tex += _tex_bullets(
+            _as_list(proj.get("bullets") or proj.get("highlights")), 3
         )
-    achievements_tex = " \\\\\n".join(achievement_lines)
+    if projects_tex:
+        sections.append(f"\\section{{Projects}}\n\\small\n{projects_tex}")
 
-    # ── Full LaTeX document ───────────────────────────────────
-    doc = (
-        r"""\documentclass[10pt, a4paper]{article}
+    # ── Skills: any categories, matched terms first ───────────
+    matched_norm = {
+        str(term).lower()
+        for term in (
+            list(match.get("matched_skills", []))
+            + list(match.get("matched_tools", []))
+            + list(match.get("matched_keywords", []))
+        )
+    }
+    skills_source = resume_content.get("skills") or profile.get("skills", {})
+    skill_rows = []
+    for category, items in (skills_source or {}).items():
+        items = [
+            re.sub(r"\s*\(familiarity\)\s*$", "", str(i), flags=re.IGNORECASE)
+            for i in _as_list(items)
+        ]
+        ordered = [i for i in items if i.lower() in matched_norm] + [
+            i for i in items if i.lower() not in matched_norm
+        ]
+        unique = list(dict.fromkeys(ordered))[:8]
+        if unique:
+            skill_rows.append(
+                f"\\noindent\\textbf{{{esc(str(category))}:}} {esc(', '.join(unique))}"
+            )
+    if skill_rows:
+        sections.append(
+            "\\section{Skills}\n\\small\n" + "\\\\[1pt]\n".join(skill_rows) + "\n"
+        )
+
+    # ── Languages (only when the profile has them) ────────────
+    languages = [str(l) for l in _as_list(profile.get("languages")) if str(l).strip()]
+    if languages:
+        sections.append(
+            f"\\section{{Languages}}\n\\small\n{esc(', '.join(languages))}\n"
+        )
+
+    # ── Certifications ────────────────────────────────────────
+    certs = list(dict.fromkeys(
+        clean_resume_style(c) for c in _as_list(profile.get("certifications"))[:5]
+        if str(c).strip()
+    ))
+    if certs:
+        sections.append(
+            "\\section{Certifications}\n\\small\n"
+            + " \\\\\n".join(f"\\noindent\\textbullet\\ {esc(c)}" for c in certs)
+            + "\n"
+        )
+
+    # ── Achievements (from the profile only) ──────────────────
+    achievements = [
+        str(a).strip() for a in _as_list(profile.get("achievements")) if str(a).strip()
+    ][:4]
+    if achievements:
+        sections.append(
+            "\\section{Achievements}\n\\small\n"
+            + " \\\\\n".join(f"\\noindent\\textbullet\\ {esc(a)}" for a in achievements)
+            + "\n"
+        )
+
+    preamble = r"""\documentclass[10pt, a4paper]{article}
 
 % ---- Packages ----
 \usepackage[
-  top    = 0.30in,
-  bottom = 0.30in,
-  left   = 0.45in,
-  right  = 0.45in
+  top    = 0.55in,
+  bottom = 0.55in,
+  left   = 0.65in,
+  right  = 0.65in
 ]{geometry}
 \usepackage{titlesec}
 \usepackage{enumitem}
@@ -933,7 +957,7 @@ def build_latex_resume(
   {\normalsize\bfseries}
   {}{0em}{\MakeUppercase}
   [{\color{black}\rule{\linewidth}{0.5pt}}]
-\titlespacing{\section}{0pt}{3pt}{1pt}
+\titlespacing{\section}{0pt}{6pt}{2pt}
 
 % ---- Spacing ----
 \setlength{\parindent}{0pt}
@@ -941,70 +965,14 @@ def build_latex_resume(
 
 \begin{document}
 """
-        + f"""
-% ===== HEADER =====
-\\begin{{center}}
-  {{\\large\\textbf{{{name}}}}}\\\\[2pt]
-  \\small
-  {phone}
-  \\hspace{{3pt}}\\textbar\\hspace{{3pt}}
-  \\href{{mailto:{email}}}{{{email}}}
-  \\hspace{{3pt}}\\textbar\\hspace{{3pt}}
-  \\href{{https://{linkedin}}}{{{linkedin}}}
-  \\hspace{{3pt}}\\textbar\\hspace{{3pt}}
-  \\href{{https://{github}}}{{{github}}}
-  \\hspace{{3pt}}\\textbar\\hspace{{3pt}}
-  \\href{{https://{portfolio}}}{{{portfolio}}}
-\\end{{center}}
-
-\\vspace{{-2pt}}
-
-% ===== PROFESSIONAL SUMMARY =====
-\\section{{Professional Summary}}
-\\small
-{esc(sanitize_summary(resume_content.get("professional_summary", ""), profile))}
-
-% ===== SKILLS =====
-\\section{{Skills}}
-\\small
-\\noindent\\textbf{{Languages:}} {lang_line}\\\\[1pt]
-\\noindent\\textbf{{AI \\& ML:}} {ai_line}, {ml_line}\\\\[1pt]
-\\noindent\\textbf{{Software Engineering:}} {se_line}\\\\[1pt]
-\\noindent\\textbf{{Data:}} {data_line}\\\\[1pt]
-\\noindent\\textbf{{Libraries/Tools:}} {lib_line}, {tools_line}\\\\[1pt]
-\\noindent\\textbf{{Databases:}} {db_line}
-
-% ===== EXPERIENCE =====
-\\section{{Experience}}
-\\small
-{experience_tex}
-
-% ===== PROJECTS =====
-\\section{{Projects}}
-\\small
-{projects_tex}
-
-% ===== EDUCATION =====
-\\section{{Education}}
-\\small
-{education_tex}
-
-% ===== CERTIFICATIONS & COURSES =====
-\\section{{Certifications \\& Courses}}
-\\vspace{{2pt}}
-\\small
-{certs_tex}
-
-% ===== ACHIEVEMENTS =====
-\\section{{Achievements}}
-\\vspace{{2pt}}
-\\small
-{achievements_tex}
-
-\\end{{document}}
-"""
+    header = (
+        "\n% ===== HEADER =====\n"
+        "\\begin{center}\n"
+        f"  {{\\Large\\textbf{{{name}}}}}\\\\[3pt]\n"
+        f"  \\small {header_line}{right_to_work}\n"
+        "\\end{center}\n\n\\vspace{-4pt}\n\n"
     )
-    return doc
+    return preamble + header + "\n".join(sections) + "\n\\end{document}\n"
 
 
 def compile_to_pdf(latex: str, output_path: str) -> bool:

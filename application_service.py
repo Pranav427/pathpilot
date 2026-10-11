@@ -522,8 +522,10 @@ def write_fallback_pdf(text: str, output_path: str) -> bool:
         
         # Body Parsing
         section_headers = {
+            "PERSONAL PROFILE",
             "PROFESSIONAL SUMMARY",
             "EDUCATION",
+            "LANGUAGES",
             "EXPERIENCE",
             "PROJECTS",
             "SKILLS",

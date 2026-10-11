@@ -1,9 +1,9 @@
 import os
 import re
 
+from document_standards import CV_MAX_WORDS, CV_MIN_WORDS
 from scoring import has_term, normalize, tokenize_phrase
 from utils import profile_is_graduate
-
 
 ATS_NOISE_TERMS = {
     "customer obsession",
@@ -164,7 +164,7 @@ def build_ats_report(resume_text, job_analysis: dict) -> dict:
         "has_skills_section": _contains(resume_text, "skills"),
         "has_projects_or_experience": _contains(resume_text, "project") or _contains(resume_text, "experience"),
         "has_education": _contains(resume_text, "education"),
-        "reasonable_length": 350 <= len(resume_text.split()) <= 900,
+        "reasonable_length": CV_MIN_WORDS <= len(resume_text.split()) <= CV_MAX_WORDS,
     }
 
     issues = []
@@ -175,7 +175,7 @@ def build_ats_report(resume_text, job_analysis: dict) -> dict:
     if not checks["has_projects_or_experience"]:
         issues.append("Resume should show relevant project or experience evidence.")
     if not checks["reasonable_length"]:
-        issues.append("Resume length is outside the recommended one-page range.")
+        issues.append("CV length is outside the recommended range (one page, or two for strong content).")
 
     return {
         "keyword_coverage": coverage,
