@@ -5,6 +5,13 @@ import os
 import re
 import time
 from market import get_market
+from early_career import (
+    GRADUATE_SCHEME,
+    PLACEMENT_YEAR,
+    SPRING_WEEK,
+    classify_programme,
+    programme_experience_fields,
+)
 from sponsorship import NO_SPONSORSHIP, classify_sponsorship
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
@@ -474,13 +481,7 @@ def profile_search_role_queries(preferences: JobPreferences) -> list[str]:
         if role not in primary_roles
     ]
     if entry_level_search:
-        for template in (
-            "{role} fresher",
-            "junior {role}",
-            "entry level {role}",
-            "{role} internship",
-            "associate {role}",
-        ):
+        for template in get_market().entry_level_query_templates:
             for role in primary_roles:
                 add(template.format(role=role))
                 normalized_role = role.lower()
@@ -499,11 +500,8 @@ def profile_search_role_queries(preferences: JobPreferences) -> list[str]:
 
     for role in expanded_roles:
         if entry_level_search:
-            add(f"{role} fresher")
-            add(f"junior {role}")
-            add(f"entry level {role}")
-            add(f"{role} internship")
-            add(f"associate {role}")
+            for template in get_market().entry_level_query_templates:
+                add(template.format(role=role))
         for skill in preferred_skills[:2]:
             add(f"{role} {skill}")
         add(role)
@@ -619,9 +617,14 @@ def infer_discovery_metadata(title: str, description: str, location: str) -> dic
         marker in title_lower
         for marker in ("intern", "internship", "trainee", "apprentice")
     )
+    programme = classify_programme(title, description)
+    programme_type, programme_level = programme_experience_fields(programme)
     if internship:
         job_type = "Internship"
         experience_level = "Internship"
+    elif programme_level:
+        job_type = programme_type
+        experience_level = programme_level
     elif re.search(
         r"\b(?:software|machine learning|ai|ml) engineer\s+(?:i|1)\b",
         title_lower,
@@ -668,8 +671,21 @@ def has_entry_level_evidence(title: str, description: str) -> bool:
         "freshers",
         "campus",
         "university graduate",
+        "placement year",
+        "industrial placement",
+        "sandwich year",
+        "spring week",
+        "insight week",
+        "graduate scheme",
+        "graduate programme",
+        "early careers",
+        "degree apprentice",
     )
     if any(marker in title_lower for marker in explicit_title_markers):
+        return True
+    if classify_programme(title, description) in {
+        SPRING_WEEK, PLACEMENT_YEAR, GRADUATE_SCHEME
+    }:
         return True
     text_markers = (
         "0-1 years",

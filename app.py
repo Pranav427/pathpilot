@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from market import get_market
+from early_career import classify_programme
 from sponsorship import classify_sponsorship, sponsorship_label
 
 try:
@@ -3248,6 +3249,7 @@ def render_job_discovery_content():
                 job.location,
                 job.job_type,
                 job.source,
+                classify_programme(job.job_title, job.job_description),
                 sponsorship_label(classify_sponsorship(f"{job.job_title} {job.job_description}")),
             ]
             st.caption(
