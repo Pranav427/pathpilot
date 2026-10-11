@@ -18,7 +18,7 @@ PROVIDER_SETTINGS = {
         "api_key_env": "ANTHROPIC_API_KEY",
         "placeholder": "your_anthropic_api_key",
         "model_env": "ANTHROPIC_MODEL",
-        "default_model": "claude-sonnet-4-5",
+        "default_model": "claude-sonnet-5-5",
     },
 }
 
