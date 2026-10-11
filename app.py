@@ -3,8 +3,11 @@
 import json
 import re
 import hashlib
+import hmac
 import logging
 import os
+import secrets
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from html import escape
@@ -808,33 +811,44 @@ def is_demo_mode() -> bool:
     return st.session_state.get("current_user_email") == "demo@pathpilot.ai"
 
 
-def make_session_token(user_id: int) -> str:
-    import hmac
-    import hashlib
-    secret = os.getenv("APP_PASSWORD", "pathpilot_salt").encode("utf-8")
-    message = str(user_id).encode("utf-8")
-    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
-    return f"{user_id}:{signature}"
+SESSION_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
+_EPHEMERAL_SESSION_SECRET = secrets.token_hex(32)
 
 
-def verify_session_token(token: str) -> int | None:
-    import hmac
-    import hashlib
-    if not token or ":" not in token:
+def _session_secret() -> bytes:
+    """Signing key for session tokens.
+
+    Uses APP_SESSION_SECRET (or APP_PASSWORD) when configured. Otherwise a random
+    per-process key is used, so tokens can never be forged from a known default
+    (they simply stop working when the app restarts).
+    """
+    configured = os.getenv("APP_SESSION_SECRET") or os.getenv("APP_PASSWORD")
+    return (configured or _EPHEMERAL_SESSION_SECRET).encode("utf-8")
+
+
+def make_session_token(user_id: int, now: float | None = None) -> str:
+    issued_at = int(now if now is not None else time.time())
+    message = f"{user_id}:{issued_at}".encode("utf-8")
+    signature = hmac.new(_session_secret(), message, hashlib.sha256).hexdigest()
+    return f"{user_id}:{issued_at}:{signature}"
+
+
+def verify_session_token(token: str, now: float | None = None) -> int | None:
+    if not token:
         return None
     try:
-        parts = token.split(":", 1)
-        user_id_str, signature = parts[0], parts[1]
+        user_id_str, issued_str, signature = token.split(":", 2)
         user_id = int(user_id_str)
-        
-        secret = os.getenv("APP_PASSWORD", "pathpilot_salt").encode("utf-8")
-        message = str(user_id).encode("utf-8")
-        expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
-        
-        if hmac.compare_digest(signature, expected):
-            return user_id
-    except Exception:
-        pass
+        issued_at = int(issued_str)
+    except ValueError:
+        return None
+    current = now if now is not None else time.time()
+    if issued_at > current + 60 or current - issued_at > SESSION_TOKEN_TTL_SECONDS:
+        return None
+    message = f"{user_id}:{issued_at}".encode("utf-8")
+    expected = hmac.new(_session_secret(), message, hashlib.sha256).hexdigest()
+    if hmac.compare_digest(signature, expected):
+        return user_id
     return None
 
 
@@ -3460,7 +3474,7 @@ def render_workspace():
                         
                         # Remove button
                         if st.button("🗑️ Remove", key=f"remove_short_{app['id']}", use_container_width=True):
-                            delete_application(app["id"])
+                            delete_application(app["id"], user_id=st.session_state.current_user_id)
                             st.success("Removed from shortlist.")
                             st.rerun()
                             

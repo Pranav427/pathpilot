@@ -879,12 +879,12 @@ def get_discovered_job_description(url: str, db_path: str = DB_PATH) -> str:
     return rows[0]["job_description"] if rows else ""
 
 
-def delete_application(application_id: int, db_path: str = DB_PATH) -> None:
-    """Deletes an application by ID from the applications table."""
+def delete_application(application_id: int, user_id: int, db_path: str = DB_PATH) -> None:
+    """Deletes an application by ID, only if it belongs to the given user."""
     init_db(db_path)
     db_client.execute_write(
-        "DELETE FROM applications WHERE id = ?",
-        (application_id,),
+        "DELETE FROM applications WHERE id = ? AND user_id = ?",
+        (application_id, user_id),
         db_path=db_path
     )
 
