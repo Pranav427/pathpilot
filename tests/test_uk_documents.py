@@ -148,3 +148,24 @@ def test_two_page_length_is_not_flagged():
     text = "Education Skills Projects " + " ".join(["analysis"] * 900)
     report = build_ats_report(text, ANALYSIS)
     assert "length" not in " ".join(report.get("issues", [])).lower()
+
+
+def test_resume_summary_drops_invented_right_to_work_claims():
+    content = {
+        "professional_summary": (
+            "BSc Economics graduate from the University of Leeds with a 2:1 and Excel skills. "
+            "Possesses the right to work in the UK without sponsorship. "
+            "Ready to support the pricing team."
+        ),
+        "skills": {}, "projects": [], "certifications": [],
+    }
+    safe = resume.sanitize_resume_facts(content, PROFILE)
+    summary = safe["professional_summary"].lower()
+    assert "right to work" not in summary and "sponsorship" not in summary
+
+
+def test_cover_letter_right_to_work_sentences_are_detected_and_removed():
+    from document_standards import strip_right_to_work_claims
+    text = "I studied economics. I am eligible to work in the UK without a visa. I enjoy analysis."
+    assert cover_letter._right_to_work_sentences(text)
+    assert strip_right_to_work_claims(text) == "I studied economics. I enjoy analysis."

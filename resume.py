@@ -21,7 +21,7 @@ except ModuleNotFoundError:
                 if key and key not in os.environ:
                     os.environ[key] = value
 from analyzer import analyze_job
-from document_standards import UK_ENGLISH_INSTRUCTION
+from document_standards import UK_ENGLISH_INSTRUCTION, strip_right_to_work_claims
 from profile import get_profile
 from matcher import match_profile_to_job
 from llm_utils import create_json_with_retry, get_llm_client, get_llm_model
@@ -158,6 +158,7 @@ def sanitize_resume_facts(resume_content: dict, profile: dict) -> dict:
         clean_resume_style(resume_content.get("professional_summary", "")),
         profile,
     )
+    summary = strip_right_to_work_claims(summary)
     
     # Dynamic grounding validation rules from profile projects
     projects_data = []
@@ -518,7 +519,10 @@ STRICT RULES:
 - Each bullet is 20-35 words and structurally different from the others.
 - The summary is exactly 2-3 sentences with no first-person pronouns.
 - User-confirmed familiarity terms belong in Skills (labelled as familiarity). You may mention them in the summary or project highlights ONLY if framed as self-study, academic coursework or academic project work, never as professional experience.
-- Avoid empty buzzwords ("passionate", "results-driven", "cutting-edge", "team player").
+- Avoid empty buzzwords ("passionate", "results-driven", "cutting-edge", "team player", "highly analytical", "proven ability").
+- The JOB REQUIREMENTS describe the employer's needs, NOT facts about the candidate. Never copy a requirement into the CV as a claim.
+- NEVER state or imply right to work, visa, sponsorship or immigration status. That is added only by the user.
+- Project and experience bullets may only restate what the profile highlights say. Do not add tools, activities, outputs or intensifiers (advanced, extensive, complex, strong) that are not in the profile.
 """
 
     client, model = llm_runtime()

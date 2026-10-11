@@ -30,6 +30,8 @@ from document_standards import (
     SALUTATION_PREFIXES,
     SIGN_OFF_PREFIXES,
     UK_ENGLISH_INSTRUCTION,
+    mentions_right_to_work,
+    strip_right_to_work_claims,
     format_uk_date,
     sign_off_for,
 )
@@ -305,6 +307,14 @@ def enforce_cover_letter_constraints(
     ).strip()
 
 
+def _right_to_work_sentences(text: str) -> list[str]:
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", str(text))
+        if mentions_right_to_work(sentence)
+    ]
+
+
 def _factual_boundaries(profile: dict) -> str:
     """Per-project metric boundaries derived from the candidate's own profile."""
     lines = [
@@ -459,7 +469,9 @@ STRICT RULES:
 6. Paragraph 3 (and optionally 4): a second point on skills or fit, then a short, confident close inviting the next step.
 7. Use ONLY facts, numbers and tools present in the candidate details above. Never invent employers, grades, metrics or experience.
 8. Avoid clichés and buzzwords ("passionate", "results-driven", "team player", "hard-working").
-9. Do NOT mention URLs. Do NOT mention visa or right-to-work status unless it is in the candidate details.
+9. Do NOT mention URLs. NEVER state or imply right to work, visa, sponsorship or immigration status.
+9b. The job details describe the employer's needs, NOT facts about the candidate. Do not turn a requirement into a claim.
+9c. Describe project and experience evidence exactly as given; do not add tools, activities or intensifiers (advanced, extensive, strong) that are not in the candidate details.
 10. Write smooth connected prose, not lists.
 11. If user-provided evidence/details are present for confirmed familiarity terms, you may weave in those terms strictly as self-study, coursework or academic learning, never as professional or commercial experience.
 
@@ -488,6 +500,7 @@ OUTPUT FORMAT, follow this EXACTLY:
         unsupported_confirmed_claims(generated, confirmed_terms)
         + unsupported_profile_claims(generated)
         + cover_letter_format_issues(generated, profile)
+        + _right_to_work_sentences(generated)
     )
     if violations:
         correction_prompt = f"""
@@ -524,6 +537,10 @@ Return only the corrected cover letter.
     for sentence in remaining_violations:
         generated = generated.replace(sentence, "")
 
+    generated = "\n\n".join(
+        strip_right_to_work_claims(block) if not _is_salutation_or_sign_off(block, "") else block
+        for block in re.split(r"\n\s*\n", generated)
+    )
     return enforce_cover_letter_constraints(generated, profile)
 
 
