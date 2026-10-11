@@ -24,6 +24,7 @@ class Market:
     timezone: str
     location_example: str
     entry_level_query_templates: tuple[str, ...]
+    excluded_curated_boards: frozenset[str] = frozenset()
 
 
 UK = Market(
@@ -60,6 +61,14 @@ UK = Market(
         "{role} placement year",
         "{role} internship",
         "entry level {role}",
+    ),
+    # India-focused company boards in the curated defaults add noise for UK users.
+    excluded_curated_boards=frozenset(
+        {
+            "phonepe", "groww", "slice", "postman", "inmobi", "observeai", "sigmoid",
+            "tekion", "zeta", "paytm", "cred", "meesho", "mindtickle", "navi", "atlan",
+            "clueso", "prathaminternational",
+        }
     ),
 )
 
@@ -103,3 +112,35 @@ def get_market() -> Market:
     code = os.getenv(COUNTRY_ENV, DEFAULT_COUNTRY).strip().upper()
     code = {"UK": "GB"}.get(code, code)
     return MARKETS.get(code, UK)
+
+
+# Regions that rule a remote job out unless it also names an allowed region.
+FOREIGN_REGION_TERMS = frozenset(
+    {
+        "americas", "north america", "latam", "latin america", "apac", "asia",
+        "united states", "usa", "u.s.", "canada", "australia", "new zealand",
+        "singapore", "japan", "brazil", "mexico", "argentina", "colombia",
+        "philippines", "pakistan", "bangladesh", "nigeria", "south africa",
+    }
+)
+UNRESTRICTED_REMOTE_TERMS = frozenset(
+    {"worldwide", "anywhere", "global", "emea", "europe", "european"}
+)
+
+
+def remote_location_is_compatible(location: str, market: Market | None = None) -> bool:
+    """False when a remote job is restricted to a region outside the market.
+
+    "Remote, India" or "Home based - Americas" is excluded for a UK user, while
+    plain "Remote", "Worldwide", "EMEA" or anything naming the market is kept.
+    """
+    market = market or get_market()
+    text = str(location or "").lower()
+    allowed = set(market.location_terms) | UNRESTRICTED_REMOTE_TERMS
+    if any(term in text for term in allowed):
+        return True
+    foreign = set(FOREIGN_REGION_TERMS)
+    for other in MARKETS.values():
+        if other.code != market.code:
+            foreign |= set(other.location_terms)
+    return not any(term in text for term in foreign)
