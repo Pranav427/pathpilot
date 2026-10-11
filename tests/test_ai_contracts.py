@@ -161,7 +161,7 @@ def test_anthropic_is_default_provider(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
 
     assert get_llm_provider() == "anthropic"
-    assert get_llm_model() == "claude-sonnet-4-5"
+    assert get_llm_model() == "claude-sonnet-5-5"
 
 
 def test_missing_gemini_key_has_actionable_error(monkeypatch):
