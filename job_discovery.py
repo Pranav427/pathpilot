@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from market import get_market
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -362,7 +363,7 @@ def expanded_market_locations(locations: list[str]) -> list[str]:
         if item and key not in seen:
             seen.add(key)
             expanded.append(item)
-    for fallback in ("India", ""):
+    for fallback in (get_market().name, ""):
         if fallback.lower() not in seen:
             seen.add(fallback.lower())
             expanded.append(fallback)
@@ -1202,7 +1203,7 @@ class AdzunaJobProvider:
         app_id: str,
         app_key: str,
         *,
-        country: str = "in",
+        country: str | None = None,
         timeout: int = BROAD_PROVIDER_TIMEOUT_SECONDS,
         opener=urlopen,
         max_queries: int = ADZUNA_MAX_QUERIES,
@@ -1210,6 +1211,7 @@ class AdzunaJobProvider:
     ):
         if not str(app_id).strip() or not str(app_key).strip():
             raise ValueError("Configure both ADZUNA_APP_ID and ADZUNA_APP_KEY.")
+        country = country or get_market().adzuna_country
         if not re.fullmatch(r"[a-z]{2}", str(country).strip().lower()):
             raise ValueError("ADZUNA_COUNTRY must be a two-letter country code.")
         self.app_id = str(app_id).strip()
@@ -1346,7 +1348,7 @@ class JoobleJobProvider:
         self,
         api_key: str,
         *,
-        country: str = "in",
+        country: str | None = None,
         timeout: int = BROAD_PROVIDER_TIMEOUT_SECONDS,
         opener=urlopen,
         max_queries: int = JOOBLE_MAX_QUERIES,
@@ -1354,6 +1356,7 @@ class JoobleJobProvider:
     ):
         if not str(api_key).strip():
             raise ValueError("Configure JOOBLE_API_KEY.")
+        country = country or get_market().jooble_country
         if not re.fullmatch(r"[a-z]{2}", str(country).strip().lower()):
             raise ValueError("JOOBLE_COUNTRY must be a two-letter country code.")
         self.api_key = str(api_key).strip()
@@ -1924,8 +1927,9 @@ class SerpApiGoogleJobsProvider:
             {
                 "engine": "google_jobs",
                 "q": role,
-                "location": location or "India",
+                "location": location or get_market().name,
                 "hl": "en",
+                "gl": get_market().google_gl,
                 "api_key": self.api_key,
             }
         )
@@ -1963,7 +1967,7 @@ class SerpApiGoogleJobsProvider:
             if len(description.split()) < 20:
                 continue
             title = str(item.get("title", "")).strip()
-            job_location = str(item.get("location") or location or "India").strip()
+            job_location = str(item.get("location") or location or get_market().name).strip()
             company = str(item.get("company_name") or "Unknown").strip() or "Unknown"
             detected = item.get("detected_extensions") or {}
             extensions = item.get("extensions") or []
@@ -2041,7 +2045,7 @@ class SerpApiGoogleJobsProvider:
             ),
             max_workers=self.max_workers,
             failure_label=lambda query: (
-                f"Google Jobs {query[0]} / {query[1] or 'India'}"
+                f"Google Jobs {query[0]} / {query[1] or get_market().name}"
             ),
         )
         if self.failures and not jobs:
@@ -2088,8 +2092,9 @@ class SearchApiGoogleJobsProvider:
             {
                 "engine": "google_jobs",
                 "q": role,
-                "location": location or "India",
+                "location": location or get_market().name,
                 "hl": "en",
+                "gl": get_market().google_gl,
                 "api_key": self.api_key,
             }
         )
@@ -2127,7 +2132,7 @@ class SearchApiGoogleJobsProvider:
             if len(description.split()) < 20:
                 continue
             title = str(item.get("title", "")).strip()
-            job_location = str(item.get("location") or location or "India").strip()
+            job_location = str(item.get("location") or location or get_market().name).strip()
             company = str(item.get("company_name") or "Unknown").strip() or "Unknown"
             detected = item.get("detected_extensions") or {}
             extensions = item.get("extensions") or []
@@ -2207,7 +2212,7 @@ class SearchApiGoogleJobsProvider:
             ),
             max_workers=self.max_workers,
             failure_label=lambda query: (
-                f"Google Jobs {query[0]} / {query[1] or 'India'}"
+                f"Google Jobs {query[0]} / {query[1] or get_market().name}"
             ),
         )
         if self.failures and not jobs:
@@ -2282,11 +2287,6 @@ def normalized_terms(values: list[str]) -> set[str]:
     return {str(value).strip().lower() for value in values if str(value).strip()}
 
 
-LOCATION_ALIAS_GROUPS = (
-    {"bengaluru", "bangalore"},
-    {"mysuru", "mysore"},
-    {"vizag", "visakhapatnam"},
-)
 INDIA_LOCATION_TERMS = {
     "india",
     "andhra pradesh",
@@ -2317,10 +2317,16 @@ INDIA_LOCATION_TERMS = {
 def normalized_location_variants(values: list[str]) -> set[str]:
     """Expands common city aliases while preserving explicit user locations."""
     variants = normalized_terms(values)
-    for aliases in LOCATION_ALIAS_GROUPS:
+    for aliases in get_market().location_alias_groups:
         if variants.intersection(aliases):
             variants.update(aliases)
     return variants
+
+
+def is_market_location(location: str) -> bool:
+    """Returns true when a provider location looks like it is in the active market."""
+    text = str(location or "").lower()
+    return any(term in text for term in get_market().location_terms)
 
 
 def is_india_location(location: str) -> bool:
@@ -2547,7 +2553,7 @@ def job_matches_preferences(
     if job.work_mode == "Remote":
         unrestricted_remote = any(
             marker in job_location
-            for marker in ("worldwide", "anywhere", "global", "india")
+            for marker in ("worldwide", "anywhere", "global", *get_market().location_terms)
         )
         if remote_requested or (
             "Remote" in preferences.work_modes and unrestricted_remote
@@ -2557,7 +2563,7 @@ def job_matches_preferences(
         requested_locations
         and not location_match
         and allow_location_expansion
-        and is_india_location(job.location)
+        and is_market_location(job.location)
     ):
         location_match = True
     if requested_locations and not location_match:
@@ -2753,7 +2759,7 @@ def deduplicate_jobs(jobs: list[DiscoveredJob]) -> list[DiscoveredJob]:
             r"\s+",
             " ",
             re.sub(
-                r"\b(?:private|pvt|limited|ltd|inc|llc|corp|corporation|india)\b|[^a-z0-9]+",
+                r"\b(?:private|pvt|limited|ltd|plc|inc|llc|corp|corporation|india|uk)\b|[^a-z0-9]+",
                 " ",
                 job.company_name.lower(),
             ),
@@ -2807,7 +2813,7 @@ def discover_jobs(
             today=today,
         )
         if not matches:
-            if reason.startswith("Location excluded:") and is_india_location(
+            if reason.startswith("Location excluded:") and is_market_location(
                 job.location
             ):
                 expanded_matches, expanded_reason = job_matches_preferences(

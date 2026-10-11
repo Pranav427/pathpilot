@@ -1,5 +1,6 @@
 """Structured job-discovery preferences shared by UI and search services."""
 
+from market import get_market
 from dataclasses import asdict, dataclass, field
 import re
 
@@ -13,7 +14,7 @@ EXPERIENCE_LEVELS = (
 ENTRY_LEVEL_REVIEW_MAX_YEARS = 2
 WORK_MODES = ("Onsite", "Hybrid", "Remote")
 JOB_TYPES = ("Full-time", "Internship", "Contract")
-DEFAULT_LOCATIONS_WHEN_UNSPECIFIED = ("India", "Remote")
+DEFAULT_LOCATIONS_WHEN_UNSPECIFIED = get_market().default_locations  # import-time snapshot; code uses the live market
 
 ROLE_EVIDENCE = (
     (
@@ -136,8 +137,7 @@ def suggest_job_preferences(profile: dict) -> dict:
     locations = (
         [profile_location]
         if profile_location
-        and profile_location.lower()
-        not in {"india", "your city, state, country"}
+        and profile_location.lower() not in get_market().placeholder_locations
         else []
     )
 
@@ -175,7 +175,7 @@ def build_job_preferences(
     """Builds and validates preferences submitted by a user."""
     parsed_locations = split_preference_items(locations)
     if not parsed_locations:
-        parsed_locations = list(DEFAULT_LOCATIONS_WHEN_UNSPECIFIED)
+        parsed_locations = list(get_market().default_locations)
     preferences = JobPreferences(
         target_roles=split_preference_items(target_roles),
         locations=parsed_locations,

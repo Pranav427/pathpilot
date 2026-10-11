@@ -84,19 +84,22 @@ python tracker.py
 
 When multiple providers are configured, **All live sources** combines and deduplicates their results. Direct company feeds are ranked ahead of broad aggregator feeds when relevance and experience confidence are otherwise close.
 
+### Job Market
+PathPilot targets the UK by default. Set `PATHPILOT_COUNTRY=GB` (UK) or `IN` (India) to change the default locations, Adzuna/Jooble country, Google Jobs region and time zone.
+
 ### Broad Market Aggregators
 
 For broader market coverage, register an Adzuna API application and configure:
 ```env
 ADZUNA_APP_ID=your_app_id
 ADZUNA_APP_KEY=your_app_key
-ADZUNA_COUNTRY=in
+ADZUNA_COUNTRY=gb
 ```
 
 For a second broad-market source, configure Jooble:
 ```env
 JOOBLE_API_KEY=your_api_key
-JOOBLE_COUNTRY=in
+JOOBLE_COUNTRY=gb
 ```
 
 ### Google Jobs search (Unified)
