@@ -22,6 +22,7 @@ except ModuleNotFoundError:
                 if key and key not in os.environ:
                     os.environ[key] = value
 from analyzer import analyze_job
+from wording_checks import strip_unsupported_intensifiers
 from document_standards import (
     COVER_LETTER_MAX_PARAGRAPHS,
     COVER_LETTER_MAX_WORDS,
@@ -541,6 +542,7 @@ Return only the corrected cover letter.
         strip_right_to_work_claims(block) if not _is_salutation_or_sign_off(block, "") else block
         for block in re.split(r"\n\s*\n", generated)
     )
+    generated = strip_unsupported_intensifiers(generated, profile)
     return enforce_cover_letter_constraints(generated, profile)
 
 

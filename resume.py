@@ -22,6 +22,7 @@ except ModuleNotFoundError:
                     os.environ[key] = value
 from analyzer import analyze_job
 from document_standards import UK_ENGLISH_INSTRUCTION, strip_right_to_work_claims
+from wording_checks import strip_unsupported_intensifiers
 from profile import get_profile
 from matcher import match_profile_to_job
 from llm_utils import create_json_with_retry, get_llm_client, get_llm_model
@@ -139,7 +140,9 @@ def sanitize_resume_facts(resume_content: dict, profile: dict) -> dict:
                 if i < len(source_highlights):
                     safe_bullets.append(clean_resume_style(source_highlights[i]))
             else:
-                safe_bullets.append(clean_resume_style(gen_b_text))
+                safe_bullets.append(
+                    strip_unsupported_intensifiers(clean_resume_style(gen_b_text), profile)
+                )
 
         safe_projects.append(
             {
@@ -159,6 +162,7 @@ def sanitize_resume_facts(resume_content: dict, profile: dict) -> dict:
         profile,
     )
     summary = strip_right_to_work_claims(summary)
+    summary = strip_unsupported_intensifiers(summary, profile)
     
     # Dynamic grounding validation rules from profile projects
     projects_data = []
