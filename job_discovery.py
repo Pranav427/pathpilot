@@ -12,6 +12,7 @@ from early_career import (
     classify_programme,
     programme_experience_fields,
 )
+from salary import parse_salary
 from sponsorship import NO_SPONSORSHIP, classify_sponsorship
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
@@ -2527,6 +2528,10 @@ def job_matches_preferences(
         f"{job.job_title} {job.job_description}"
     ) == NO_SPONSORSHIP:
         return False, "Visa sponsorship not available"
+    if preferences.minimum_salary:
+        stated = parse_salary(f"{job.job_title} {job.job_description}")
+        if stated and stated.annual_high < preferences.minimum_salary:
+            return False, "Salary below minimum"
     if is_broad_market_source(job.source):
         company_issue = broad_source_company_quality_issue(job.company_name)
         if company_issue:

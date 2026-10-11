@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from market import get_market
+from salary import below_sponsorship_threshold, format_salary, parse_salary
 from reed_provider import ReedJobProvider, reed_is_configured
 from early_career import classify_programme
 from sponsorship import classify_sponsorship, sponsorship_label
@@ -156,7 +157,7 @@ def ensure_job_preferences(prefs) -> JobPreferences:
             "target_roles", "locations", "experience_levels",
             "work_modes", "job_types", "preferred_skills",
             "excluded_keywords", "maximum_job_age_days",
-            "needs_sponsorship"
+            "needs_sponsorship", "minimum_salary"
         }
         filtered = {k: v for k, v in prefs.items() if k in valid_keys}
         if not filtered:
@@ -891,7 +892,7 @@ def init_state():
                 "target_roles", "locations", "experience_levels",
                 "work_modes", "job_types", "preferred_skills",
                 "excluded_keywords", "maximum_job_age_days",
-            "needs_sponsorship"
+            "needs_sponsorship", "minimum_salary"
             }
             filtered = {k: v for k, v in pref_dict.items() if k in valid_keys}
             job_preferences = JobPreferences(**filtered)
@@ -1232,6 +1233,18 @@ def load_shortlisted_job(app):
         
     st.session_state.navigation = "Application"
 
+
+
+def _salary_badge(job) -> str:
+    """Stated salary for a job card, with an indicative sponsorship warning."""
+    info = parse_salary(f"{job.job_title} {job.job_description}")
+    if not info:
+        return ""
+    label = format_salary(info)
+    preferences = st.session_state.get("job_preferences")
+    if getattr(preferences, "needs_sponsorship", False) and below_sponsorship_threshold(info):
+        label += " (below the usual sponsorship salary threshold, check gov.uk)"
+    return label
 
 
 def format_history_time(value: str) -> str:
@@ -2541,6 +2554,17 @@ def render_job_discovery_content():
             value=current.get("maximum_job_age_days", 14),
             format="%d days",
         )
+        minimum_salary = st.number_input(
+            "Minimum salary (£ a year, 0 for no minimum)",
+            min_value=0,
+            max_value=300000,
+            step=1000,
+            value=int(current.get("minimum_salary", 0) or 0),
+            help=(
+                "Hides jobs that state a salary below this. Jobs that do not "
+                "state a salary are still shown."
+            ),
+        )
         needs_sponsorship = st.checkbox(
             "I will need visa sponsorship from an employer",
             value=bool(current.get("needs_sponsorship", False)),
@@ -2567,6 +2591,7 @@ def render_job_discovery_content():
                 excluded_keywords=excluded_keywords,
                 maximum_job_age_days=maximum_job_age_days,
                 needs_sponsorship=needs_sponsorship,
+                minimum_salary=int(minimum_salary),
             )
             if updated_preferences != st.session_state.job_preferences:
                 clear_discovery_results()
@@ -3270,6 +3295,7 @@ def render_job_discovery_content():
                 job.location,
                 job.job_type,
                 job.source,
+                _salary_badge(job),
                 classify_programme(job.job_title, job.job_description),
                 sponsorship_label(classify_sponsorship(f"{job.job_title} {job.job_description}")),
             ]

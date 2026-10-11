@@ -52,6 +52,30 @@ def clear_reed_cache() -> None:
     _REED_CACHE.clear()
 
 
+def reed_salary_line(item: dict) -> str:
+    """Render Reed's structured salary as text the salary parser understands."""
+    try:
+        low = float(item.get("minimumSalary") or 0)
+        high = float(item.get("maximumSalary") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if str(item.get("currency", "GBP")).upper() not in {"", "GBP"}:
+        return ""
+    low, high = (low or high), (high or low)
+    if not low:
+        return ""
+    if low >= 5000:
+        unit = "per annum"
+    elif 5 <= low <= 500:
+        unit = "per hour"
+    else:
+        return ""
+    span = f"£{low:,.0f}" if low == high else f"£{low:,.0f} - £{high:,.0f}"
+    if unit == "per hour":
+        span = span.replace(",", "")
+    return f"Salary: {span} {unit}"
+
+
 def parse_reed_date(value) -> tuple[date, bool]:
     """Parse Reed's dd/mm/yyyy (or ISO) date. Returns (date, is_valid)."""
     text = str(value or "").strip()
@@ -144,6 +168,9 @@ class ReedJobProvider:
         if not job_id or not title:
             return None
         description = html_to_text(item.get("jobDescription", ""))
+        salary_line = reed_salary_line(item)
+        if salary_line and "£" not in description[:400]:
+            description = f"{salary_line}. {description}".strip()
         location = str(item.get("locationName", "")).strip()
         company = str(item.get("employerName", "")).strip() or "Unknown"
         posted, valid = parse_reed_date(item.get("date"))
@@ -173,7 +200,16 @@ class ReedJobProvider:
         if not isinstance(detail, dict):
             return [job]
         full = html_to_text(detail.get("jobDescription", ""))
-        description = full if len(full) > len(job.job_description) else job.job_description
+        prefix_match = re.match(r"Salary: .*?per (?:annum|hour)\. ", job.job_description)
+        salary_prefix = prefix_match.group(0) if prefix_match else ""
+        snippet = job.job_description[len(salary_prefix):]
+        if len(full) > len(snippet):
+            if not salary_prefix:
+                line = reed_salary_line(detail)
+                salary_prefix = f"{line}. " if line and "£" not in full[:400] else ""
+            description = f"{salary_prefix}{full}"
+        else:
+            description = job.job_description
         contract = " ".join(
             str(detail.get(key, ""))
             for key in ("contractType", "jobType")
