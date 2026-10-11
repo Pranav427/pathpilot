@@ -189,7 +189,7 @@ Extract the details using this exact JSON schema:
         }}
     ],
     "certifications": ["certification names"],
-    "courses": ["course names (e.g. Full Stack Development - Pantech)"],
+    "courses": ["course names (e.g. Machine Learning Specialisation)"],
     "achievements": ["key professional achievements, metrics, or career milestones"],
     "publications": ["research papers, articles, patents, or publications"],
     "volunteer_experience": ["volunteering, leadership, or NGO activities"],

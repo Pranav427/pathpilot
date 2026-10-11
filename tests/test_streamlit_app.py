@@ -214,18 +214,18 @@ def test_normalized_ai_errors_are_actionable_and_safe():
 
 
 def test_document_download_names_are_short_and_correct():
-    profile = {"name": "Obili Pranav"}
+    profile = {"name": "Amelia Clarke"}
 
     assert document_download_name(
         profile,
         "Domyn SpA",
         "resume",
-    ) == "obili_pranav_resume_domyn_spa.pdf"
+    ) == "amelia_clarke_resume_domyn_spa.pdf"
     assert document_download_name(
         profile,
         "Domyn SpA",
         "cover_letter",
-    ) == "obili_pranav_cover_letter_domyn_spa.pdf"
+    ) == "amelia_clarke_cover_letter_domyn_spa.pdf"
 
 
 def test_description_fingerprint_ignores_spacing_and_case_only():

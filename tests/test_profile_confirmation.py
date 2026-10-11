@@ -89,6 +89,5 @@ def test_master_software_skills_stay_concise_and_verified():
         "Data Structures & Algorithms",
         "Software Development Life Cycle (SDLC)",
         "Debugging",
-        "Error Handling",
         "Technical Documentation",
     ]

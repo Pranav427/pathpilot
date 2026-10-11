@@ -23,6 +23,7 @@ class Market:
     location_alias_groups: tuple[frozenset[str], ...]
     timezone: str
     location_example: str
+    entry_level_query_templates: tuple[str, ...]
 
 
 UK = Market(
@@ -52,6 +53,14 @@ UK = Market(
     ),
     timezone="Europe/London",
     location_example="London, Manchester, Leeds, Remote (UK)",
+    entry_level_query_templates=(
+        "graduate {role}",
+        "junior {role}",
+        "{role} graduate scheme",
+        "{role} placement year",
+        "{role} internship",
+        "entry level {role}",
+    ),
 )
 
 INDIA = Market(
@@ -77,6 +86,13 @@ INDIA = Market(
     ),
     timezone="Asia/Kolkata",
     location_example="Bengaluru, Hyderabad, Remote",
+    entry_level_query_templates=(
+        "{role} fresher",
+        "junior {role}",
+        "entry level {role}",
+        "{role} internship",
+        "associate {role}",
+    ),
 )
 
 MARKETS = {market.code: market for market in (UK, INDIA)}

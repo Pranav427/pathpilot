@@ -170,13 +170,29 @@ def flatten_profile_terms(profile: dict) -> set[str]:
         terms.add(normalize(education.get("degree", "")))
         terms.add(normalize(education.get("institution", "")))
         terms.update(tokenize_phrase(education.get("degree", "")))
+        degree_text = education.get("degree", "")
         if re.search(
-            r"\b(b\.?\s*tech|btech|bachelor)\b",
-            education.get("degree", ""),
+            r"\b(b\.?\s*tech|btech|b\.?\s*sc|bsc|b\.?\s*eng|beng|b\.?\s*a|bachelor)\b",
+            degree_text,
             flags=re.IGNORECASE,
         ):
             terms.update(
                 {
+                    "bachelor degree",
+                    "bachelors degree",
+                    "bachelor's degree",
+                }
+            )
+        if re.search(
+            r"\b(m\.?\s*tech|mtech|m\.?\s*sc|msc|m\.?\s*eng|meng|m\.?\s*a|mba|master)\b",
+            degree_text,
+            flags=re.IGNORECASE,
+        ):
+            terms.update(
+                {
+                    "master degree",
+                    "masters degree",
+                    "master's degree",
                     "bachelor degree",
                     "bachelors degree",
                     "bachelor's degree",

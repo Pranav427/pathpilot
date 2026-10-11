@@ -9,7 +9,16 @@ from scoring import (
 
 
 def test_profile_aliases_cover_known_equivalent_terms():
-    terms = flatten_profile_terms(get_profile())
+    profile = get_profile()
+    # Source terms that the alias table maps requirements onto.
+    profile["skills"]["Extra"] = [
+        "Clustering",
+        "Self-Learning",
+        "Innovation",
+        "Linear programming conceptual foundation",
+        "Database indexing and query systems conceptual foundation",
+    ]
+    terms = flatten_profile_terms(profile)
     requirements = [
         "Python coding",
         "Data handling",
@@ -204,10 +213,10 @@ def test_legacy_document_audit_flags_outdated_and_unsupported_claims(tmp_path):
     )
     cover_pdf.with_suffix(".txt").write_text(
         "Dear Hiring Team,\n\n"
-        "During my internship at SkillDzire, I worked with OpenAI.\n\n"
+        "During my internship at Brightfield Analytics, I worked with OpenAI.\n\n"
         "I built useful projects.\n\n"
         "I welcome a discussion.\n\n"
-        "Sincerely,\nObili Pranav",
+        "Sincerely,\nAmelia Clarke",
         encoding="utf-8",
     )
 

@@ -25,7 +25,7 @@ def extract_metrics_from_text(text: str) -> list[str]:
     """Auto-extracts potential grounding metrics (percentages, sizes, counts) from text."""
     if not text:
         return []
-    # Match metrics like 93.91%, 96%, 140K, 15,000
+    # Match metrics like 91.2%, 96%, 140K, 12,000
     pattern = r"\b\d+(?:\.\d+)?%|\b\d+K\b|\b\d{1,3}(?:,\d{3})+\b"
     matches = re.findall(pattern, text)
     seen = set()
@@ -162,128 +162,65 @@ def copy_profile(profile: dict) -> dict:
     return deepcopy(profile)
 
 
-def get_profile() -> dict:
+def get_demo_profile() -> dict:
+    """A fictional demo candidate used for the demo account, tests and local trials.
+
+    Every detail here is invented; real users supply their own profile. It is
+    deliberately small but covers each section the document generators use.
     """
-    Candidate master resume stored as structured data.
-
-    Contact details come from environment variables so the repository can be
-    shared publicly without exposing private information.
-    """
-
-    profile = {
-
-        # ───────────────── BASIC DETAILS ───────────────── #
-
-        "name": os.getenv("CANDIDATE_NAME", "Your Name"),
-        "email": os.getenv("CANDIDATE_EMAIL", "your.email@example.com"),
-        "phone": os.getenv("CANDIDATE_PHONE", "+91 00000 00000"),
-        "linkedin": os.getenv(
-            "CANDIDATE_LINKEDIN",
-            "https://linkedin.com/in/your-profile",
-        ),
-        "github": os.getenv(
-            "CANDIDATE_GITHUB",
-            "https://github.com/your-username",
-        ),
-        "portfolio": os.getenv(
-            "CANDIDATE_PORTFOLIO",
-            "https://your-portfolio.example.com",
-        ),
-        "location": os.getenv(
-            "CANDIDATE_LOCATION",
-            "Your City, State, Country",
-        ),
-
-        # ───────────────── CAREER OBJECTIVE ───────────────── #
-
+    return {
+        "name": "Amelia Clarke",
+        "email": "amelia.clarke@example.com",
+        "phone": "+44 7700 900123",
+        "linkedin": "linkedin.com/in/amelia-clarke-demo",
+        "github": "github.com/amelia-clarke-demo",
+        "portfolio": "",
+        "location": "Leeds, UK",
         "objective": (
-            "Computer Science graduate with practical project experience in machine "
-            "learning, deep learning, natural language processing, computer vision, "
-            "data analysis, and AI application development. Built and evaluated "
-            "multiclass text-classification and face-authenticity systems using "
-            "Python, scikit-learn, PyTorch, TensorFlow, transfer learning, and "
-            "Streamlit. Also experienced with software fundamentals, API integration, "
-            "prompt engineering, SQL, Git, and technical "
-            "documentation. Seeking an entry-level AI, machine learning, data "
-            "science, or software engineering role."
+            "Computer Science graduate with practical project experience in "
+            "machine learning, natural language processing, computer vision and "
+            "data analysis. Built and evaluated a text-classification model and an "
+            "image-classification model using Python, scikit-learn and PyTorch. "
+            "Comfortable with SQL, Git and technical documentation. Seeking a "
+            "graduate role in data science, machine learning or software engineering."
         ),
-
-        # ───────────────── TECHNICAL SKILLS ───────────────── #
-
         "skills": {
-
-            "Programming Languages": [
-                "Python",
-                "SQL",
-                "Java",
-                "C++"
-            ],
-
+            "Programming Languages": ["Python", "SQL", "Java", "C++"],
             "Artificial Intelligence & Machine Learning": [
-                "Artificial Intelligence",
                 "Machine Learning",
                 "Natural Language Processing (NLP)",
-                "Large Language Models (LLMs)",
-                "Prompt Engineering",
                 "Regression",
                 "Classification",
-                "Clustering",
-                "Model Training",
                 "Model Evaluation",
-                "Model Validation",
-                "Predictive Modeling",
-                "Hyperparameter Tuning",
-                "Cross-Validation"
+                "Cross-Validation",
             ],
-
             "Deep Learning & Computer Vision": [
                 "Deep Learning",
                 "Neural Networks",
-                "Convolutional Neural Networks (CNNs)",
                 "Computer Vision",
                 "Image Classification",
                 "Transfer Learning",
-                "Image Preprocessing",
-                "Data Augmentation",
-                "Model Training and Evaluation",
-                "ResNet50",
-                "EfficientNetV2-B0"
             ],
-
             "AI & Application Development": [
-                "LLM API Integration",
                 "API Integration",
-                "Machine Learning Pipelines",
-                "AI Application Development",
-                "Streamlit Application Development"
+                "Streamlit Application Development",
             ],
-
             "Software Fundamentals": [
                 "Object-Oriented Programming (OOP)",
                 "Data Structures & Algorithms",
                 "Software Development Life Cycle (SDLC)",
                 "Debugging",
-                "Error Handling",
-                "Technical Documentation"
+                "Technical Documentation",
             ],
-
             "Data Analysis": [
                 "Data Cleaning",
-                "Data Preprocessing",
                 "Exploratory Data Analysis (EDA)",
                 "Data Visualization",
                 "Feature Engineering",
                 "Statistical Analysis",
                 "TF-IDF",
                 "Text Classification",
-                "Sentiment Analysis",
-                "Text Preprocessing",
-                "Stop-word Removal",
-                "Lemmatization",
-                "N-grams",
-                "ETL Concepts"
             ],
-
             "Libraries & Frameworks": [
                 "pandas",
                 "NumPy",
@@ -291,360 +228,124 @@ def get_profile() -> dict:
                 "NLTK",
                 "PyTorch",
                 "Torchvision",
-                "TensorFlow",
-                "Keras",
                 "Matplotlib",
-                "Seaborn"
+                "Seaborn",
             ],
-
-            "Databases": [
-                "MySQL",
-                "Relational Databases"
-            ],
-
+            "Databases": ["MySQL", "PostgreSQL"],
             "Tools & Platforms": [
                 "Jupyter Notebook",
-                "Google Colab",
                 "VS Code",
                 "Git",
                 "GitHub",
-                "Streamlit"
+                "Streamlit",
             ],
-
             "Soft Skills": [
                 "Analytical Thinking",
-                "Critical Thinking",
                 "Problem Solving",
                 "Team Collaboration",
                 "Communication",
-                "Self-Learning",
-                "Innovation",
                 "Attention to Detail",
-                "Adaptability"
-            ]
+            ],
         },
-
-        # ───────────────── EXPERIENCE ───────────────── #
-
         "experience": [
             {
-                "title": "Artificial Intelligence Intern",
-                "company": "SkillDzire",
-                "duration": "Apr 2024",
-                "type": "Internship / Training",
-                "description": (
-                    "Completed a 240-hour Artificial Intelligence internship "
-                    "program organized by SkillDzire in collaboration with the "
-                    "Andhra Pradesh State Council of Higher Education."
-                ),
-                "highlights": [
-                    "Completed long-term AI internship training",
-                    "Built foundational understanding of artificial intelligence concepts",
-                    "Strengthened AI-focused project and application readiness"
-                ],
-                "certificate": "AI certificate.pdf"
-            },
-            {
-                "title": "Data Science Intern",
-                "company": "Aivariant",
-                "duration": "Nov 2025 - Feb 2026",
+                "title": "Data Analyst Intern",
+                "company": "Brightfield Analytics Ltd",
+                "duration": "Jun 2024 - Aug 2024",
                 "type": "Internship",
                 "description": (
-                    "Completed a Data Science internship project at Aivariant, "
-                    "focused on applying data science concepts in a project-based "
-                    "internship environment."
+                    "Summer internship supporting a retail analytics team with "
+                    "reporting and data preparation."
                 ),
                 "highlights": [
-                    "Completed Data Science internship project",
-                    "Applied data science concepts in a structured internship program",
-                    "Received internship certificate issued on February 11, 2026"
+                    "Cleaned and prepared weekly sales datasets in Python and pandas for the reporting team.",
+                    "Built SQL queries and Matplotlib charts used in a monthly performance review.",
                 ],
-                "certificate": "DS Intern .pdf"
             },
             {
-                "title": "Data Science Intern",
-                "company": "SkillDzire",
-                "duration": "Oct 2024 - Mar 2025",
-                "type": "Internship / Training",
-                "description": (
-                    "Completed a long-term Data Science internship program "
-                    "organized by SkillDzire in collaboration with the Andhra "
-                    "Pradesh State Council of Higher Education."
-                ),
-                "highlights": [
-                    "Completed long-term Data Science internship program",
-                    "Strengthened data science, analysis, and ML foundations",
-                    "Completed program from October 2024 to March 2025"
-                ],
-                "certificate": "DS certificate .pdf"
-            },
-            {
-                "title": "Full Stack Development Intern",
-                "company": "Pantech e Learning",
-                "duration": "Mar 2023 - May 2023",
+                "title": "Software Development Intern",
+                "company": "Calder Valley Software",
+                "duration": "Jul 2023 - Aug 2023",
                 "type": "Internship",
-                "description": (
-                    "Completed a two-month internship in Full Stack Development "
-                    "covering Web, Java, and Python."
-                ),
+                "description": "Short internship in a small web development team.",
                 "highlights": [
-                    "Completed internship in Full Stack Development",
-                    "Worked with Web, Java, and Python fundamentals",
-                    "Strengthened software development and coding foundations"
+                    "Fixed front-end bugs and wrote unit tests for a customer booking web application.",
                 ],
-                "certificate": "FSJ certificate.pdf"
-            }
+            },
         ],
-
-        # ───────────────── PROJECTS ───────────────── #
-
         "projects": [
-
             {
-                "name": "Medical Condition Classification from Drug Reviews",
-
+                "name": "Customer Review Sentiment Classifier",
                 "domain": "Data Analytics and NLP",
-
-                "tools": [
-                    "Python",
-                    "scikit-learn",
-                    "TF-IDF",
-                    "pandas",
-                    "NumPy",
-                    "NLTK",
-                    "Streamlit"
-                ],
-
-                "github": os.getenv(
-                    "CANDIDATE_GITHUB",
-                    "https://github.com/your-username",
-                ),
-
+                "tools": ["Python", "scikit-learn", "NLTK", "TF-IDF", "pandas"],
+                "github": "",
                 "description": (
-                    "Developed an NLP-based multiclass text classification "
-                    "system to predict medical conditions from user drug reviews. "
-                    "Applied text preprocessing, lemmatization, TF-IDF vectorization, "
-                    "and machine learning algorithms including Logistic Regression, "
-                    "Naive Bayes, Linear SVM, and SGD Classifier. Tuned the final "
-                    "Linear SVM using five-fold GridSearchCV and achieved 96.16% "
-                    "test accuracy with a 94.60% macro F1 score."
+                    "Text-classification pipeline that predicts the sentiment of "
+                    "customer reviews using TF-IDF features and linear models."
                 ),
-
                 "highlights": [
-                    "Built a multiclass NLP pipeline to classify three patient conditions from drug reviews",
-                    "Compared four classifiers using accuracy, precision, recall, and macro F1",
-                    "Tuned Linear SVM with five-fold GridSearchCV, achieving 96.16% test accuracy",
-                    "Implemented TF-IDF, lemmatization, VADER sentiment analysis, and Streamlit inference",
-                    "Saved the trained model, vectorizer, and label encoder for reproducible deployment"
+                    "Preprocessed 12,000 customer reviews with tokenisation, stop-word removal and lemmatisation.",
+                    "Compared Logistic Regression and Naive Bayes models using cross-validation, reaching 91.2% accuracy.",
                 ],
-                "grounding_metrics": ["96.16%", "94.60%"]
+                "grounding_metrics": ["91.2%", "12,000"],
             },
-
             {
-                "name": "Modern Security System for Detection of Real and Fake Human Faces",
-
+                "name": "Plant Disease Image Classifier",
                 "domain": "Deep Learning and Computer Vision",
-
-                "tools": [
-                    "Python",
-                    "PyTorch",
-                    "Torchvision",
-                    "TensorFlow",
-                    "Keras",
-                    "ResNet50",
-                    "EfficientNetV2-B0",
-                    "NumPy",
-                    "Matplotlib",
-                    "Streamlit"
-                ],
-
-                "github": os.getenv(
-                    "CANDIDATE_GITHUB",
-                    "https://github.com/your-username",
-                ),
-
+                "tools": ["Python", "PyTorch", "Torchvision", "Matplotlib"],
+                "github": "",
                 "description": (
-                    "Developed a deep-learning face-authenticity classification "
-                    "system using the 140K Real and Fake Faces dataset. Applied "
-                    "transfer learning with a pretrained ResNet50, custom classifier "
-                    "layers, image preprocessing, and PyTorch training and evaluation "
-                    "loops. Achieved 93.91% final test accuracy and deployed image "
-                    "inference through Streamlit using a TensorFlow/Keras "
-                    "EfficientNetV2-B0 model."
+                    "Image classifier for plant leaf diseases built with transfer "
+                    "learning and data augmentation."
                 ),
-
                 "highlights": [
-                    "Built a real-versus-fake face classifier using PyTorch and ResNet50 transfer learning",
-                    "Implemented custom classifier layers, training, evaluation, and image inference workflows",
-                    "Achieved 93.91% final test accuracy after 10 training epochs",
-                    "Deployed inference with Streamlit and a TensorFlow/Keras EfficientNetV2-B0 model",
-                    "Presented and published the research at ICETCI-2025 in Springer proceedings"
+                    "Fine-tuned a pretrained ResNet model on 8,000 leaf images across 5 disease classes.",
+                    "Applied data augmentation and early stopping, reaching 94.5% test accuracy.",
                 ],
-                "grounding_metrics": ["93.91%", "140K", "15,000", "10"]
-            }
+                "grounding_metrics": ["94.5%", "8,000", "5"],
+            },
         ],
-
-        # ───────────────── EDUCATION ───────────────── #
-
         "education": [
-
             {
-                "degree": "B.Tech in Computer Science and Engineering",
-                "institution": "Annamacharya Institute of Technology and Sciences",
-                "year": "2021 – 2025",
-                "grade": "8.66 CGPA"
+                "degree": "BSc Computer Science (Hons)",
+                "institution": "University of Leeds",
+                "year": "2022 \u2013 2025",
+                "grade": "2:1",
+                "modules": [
+                    "Machine Learning",
+                    "Databases",
+                    "Algorithms and Data Structures",
+                    "Software Engineering",
+                ],
             },
-
             {
-                "degree": "Intermediate",
-                "institution": "Narayana Junior College",
-                "year": "2019 – 2021",
-                "grade": "868/1000"
+                "degree": "A-levels: Mathematics, Further Mathematics, Physics",
+                "institution": "Aire Valley Sixth Form College",
+                "year": "2020 \u2013 2022",
+                "grade": "A*AA",
             },
-
-            {
-                "degree": "SSC",
-                "institution": "Ravindra Bharathi School",
-                "year": "2018 – 2019",
-                "grade": "9.3 GPA"
-            }
         ],
-
-        # ───────────────── COURSES ───────────────── #
-
         "courses": [
-
             {
-                "name": "Data Science",
-                "provider": "ExcelR",
-
-                "description": (
-                    "Completed Data Science programme with distinction. Learned "
-                    "Python for data analysis, statistics, EDA, machine learning, "
-                    "and predictive modeling. Worked on real-world datasets using "
-                    "pandas, NumPy, and scikit-learn."
-                )
-            },
-
-            {
-                "name": "Artificial Intelligence Internship",
-                "provider": "SkillDzire / APSCHE",
-
-                "description": (
-                    "Completed a 240-hour Artificial Intelligence internship "
-                    "program organized by SkillDzire in collaboration with "
-                    "Andhra Pradesh State Council of Higher Education. Strengthened "
-                    "foundations in AI concepts, agentic AI workflows, prompt "
-                    "engineering, and practical AI application thinking."
-                )
-            },
-
-            {
-                "name": "Full Stack Development Internship",
-                "provider": "Pantech e Learning",
-
-                "description": (
-                    "Completed a two-month Full Stack Development internship "
-                    "covering Web, Java, and Python, with exposure to backend "
-                    "development, RESTful API concepts, authentication concepts, "
-                    "database management, and the software development life cycle."
-                )
-            },
-
-            {
-                "name": "Crash Course on Python",
-                "provider": "Coursera",
-
-                "description": (
-                    "Learned Python fundamentals including variables, loops, "
-                    "functions, conditionals, and data structures."
-                )
+                "name": "Machine Learning Specialisation",
+                "provider": "Online course",
+                "description": "Self-study course covering supervised learning, model evaluation and neural networks.",
             }
         ],
-
-        # ───────────────── CERTIFICATIONS ───────────────── #
-
-        "certifications": [
-            "Masters Program in Data Science -- FutureSkills Prime / NASSCOM -- Gold Category (96%)",
-            "Data Science Programme with Distinction -- ExcelR",
-            "Problem Solving (Intermediate) -- HackerRank -- Verified",
-            "Artificial Intelligence -- SkillDzire / APSCHE",
-        ],
-        # ───────────────── PUBLICATIONS ───────────────── #
-
-        "publications": [
-
-            {
-                "title": (
-                    "A Modern Security Advance System for Detection "
-                    "of Real and Fake Human Faces"
-                ),
-
-                "publisher": "Springer",
-
-                "conference": "ICETCI-2025",
-
-                "event": (
-                    "First International Conference on Emerging Technologies "
-                    "and Computing Innovations"
-                ),
-
-                "date": "February 22-23, 2025",
-
-                "location": "Hotel Grand Rio, Nashik, India"
-            }
-        ],
-
-        # ───────────────── ACHIEVEMENTS ───────────────── #
-
+        "certifications": ["Machine Learning Specialisation (online course)"],
+        "publications": [],
         "achievements": [
-
-            "Earned Gold category with 96% in the FutureSkills Prime / NASSCOM Masters Program in Data Science assessment",
-
-            "Research paper accepted and published in Springer conference proceedings (ICETCI-2025)",
-
-            "Presented paper titled 'A Modern Security Advance System for Detection of Real and Fake Human Faces' at ICETCI-2025",
-
-            "Achieved 93.91% accuracy in face authenticity detection project",
-
-            "Completed 240-hour Artificial Intelligence internship through SkillDzire / APSCHE",
-
-            "Completed Data Science programme with distinction from ExcelR",
-
-            "Completed Full Stack Development internship covering Web, Java, and Python",
-
-            "Earned Logical Reasoning Recognition from Lara Technologies with 38/45 marks",
-
-            #"Selected for TCS Prime hiring program",
-
-            "Completed multiple ML and NLP academic projects"
+            "Dean's List for academic performance, 2024",
+            "Finalist, university hackathon 2023",
         ],
-
-        # ───────────────── LANGUAGES ───────────────── #
-
-        "languages": [
-            "English",
-            "Telugu",
-            "Hindi"
-        ],
-
-        # ───────────────── INTERESTS ───────────────── #
-
-        "interests": [
-
-            "Data Science and Machine Learning",
-
-            "Natural Language Processing (NLP)",
-
-            "Applied Statistics and Data Analysis",
-
-            "Data Engineering and ETL Pipelines",
-
-            "Mathematics Driven Problem Solving"
-        ]
+        "languages": ["English (native)", "French (B1)"],
+        "interests": ["Data science", "Machine learning", "Open-source software"],
     }
 
-    return profile
+
+def get_profile() -> dict:
+    """Backwards-compatible alias: the fictional demo profile."""
+    return get_demo_profile()
 
 
 # ───────────────── DISPLAY FUNCTION ───────────────── #

@@ -222,3 +222,23 @@ def test_strongest_points_exclude_application_only_terms():
 
     assert all("RAG" not in point for point in points)
     assert any("Verified Project" in point for point in points)
+
+
+def test_response_text_skips_thinking_blocks():
+    from types import SimpleNamespace
+
+    from llm_utils import response_text
+
+    response = SimpleNamespace(
+        content=[
+            SimpleNamespace(type="thinking", thinking="reasoning..."),
+            SimpleNamespace(type="text", text='{"ok": '),
+            SimpleNamespace(type="text", text="true}"),
+        ]
+    )
+    assert response_text(response) == '{"ok": true}'
+
+    import pytest
+
+    with pytest.raises(ValueError):
+        response_text(SimpleNamespace(content=[SimpleNamespace(type="thinking")]))
