@@ -66,8 +66,9 @@ PathPilot is currently in the **Product Refinement & Demo Readiness** phase.
    ```
 
 ### Running Tests
-Execute unit and regression tests cleanly with:
+Install the development dependencies (includes `pytest`), then run the unit and regression tests:
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
