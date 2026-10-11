@@ -38,7 +38,12 @@ from document_standards import (
 )
 from profile import get_profile
 from matcher import match_profile_to_job
-from llm_utils import create_message_with_retry, get_llm_client, get_llm_model
+from llm_utils import (
+    create_message_with_retry,
+    get_llm_client,
+    get_llm_model,
+    response_text,
+)
 from utils import (
     clean_phone,
     clean_url,
@@ -495,7 +500,7 @@ OUTPUT FORMAT, follow this EXACTLY:
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
-    generated = response.content[0].text
+    generated = response_text(response)
     violations = (
         unsupported_confirmed_claims(generated, confirmed_terms)
         + unsupported_profile_claims(generated)
@@ -528,7 +533,7 @@ Return only the corrected cover letter.
             max_tokens=800,
             messages=[{"role": "user", "content": correction_prompt}],
         )
-        generated = response.content[0].text
+        generated = response_text(response)
 
     remaining_violations = (
         unsupported_confirmed_claims(generated, confirmed_terms)

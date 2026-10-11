@@ -292,6 +292,24 @@ def create_message_with_retry(
     raise last_error
 
 
+def response_text(response) -> str:
+    """Join the text blocks of a model response, skipping thinking/tool blocks.
+
+    Newer Claude models can return a thinking block before the answer, so the
+    first content block is not always text.
+    """
+    parts = []
+    for block in getattr(response, "content", None) or []:
+        if getattr(block, "type", "text") != "text":
+            continue
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+    if not parts:
+        raise ValueError("The AI response contained no text.")
+    return "".join(parts)
+
+
 def create_json_with_retry(
     client,
     *,
@@ -315,7 +333,7 @@ def create_json_with_retry(
             if getattr(client, "provider", "") == "gemini":
                 request["response_mime_type"] = "application/json"
             response = client.messages.create(**request)
-            data = extract_json_object(response.content[0].text)
+            data = extract_json_object(response_text(response))
             return require_keys(data, required_keys, source)
         except (KeyboardInterrupt, SystemExit):
             raise
