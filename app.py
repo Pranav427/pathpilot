@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from market import get_market
+from reed_provider import ReedJobProvider, reed_is_configured
 from early_career import classify_programme
 from sponsorship import classify_sponsorship, sponsorship_label
 
@@ -2634,6 +2635,8 @@ def render_job_discovery_content():
     jooble_api_key = os.getenv("JOOBLE_API_KEY", "").strip()
     jooble_country = os.getenv("JOOBLE_COUNTRY", get_market().jooble_country).strip().lower()
     jooble_configured = jooble_is_configured()
+    reed_api_key = os.getenv("REED_API_KEY", "").strip()
+    reed_configured = reed_is_configured()
     serpapi_api_key = os.getenv("SERPAPI_API_KEY", "").strip()
     searchapi_api_key = os.getenv("SEARCHAPI_API_KEY", "").strip()
     google_jobs_configured = serpapi_is_configured()
@@ -2655,6 +2658,8 @@ def render_job_discovery_content():
         source_options.append("Broad Adzuna search")
     if jooble_configured:
         source_options.append("Broad Jooble search")
+    if reed_configured:
+        source_options.append("Reed search")
     if google_jobs_configured:
         source_options.append("Google Jobs search")
     live_source_count = sum(
@@ -2666,6 +2671,7 @@ def render_job_discovery_content():
             early_career_sources_configured,
             adzuna_configured,
             jooble_configured,
+            reed_configured,
             google_jobs_configured,
         )
     )
@@ -2761,6 +2767,15 @@ def render_job_discovery_content():
         )
         discover_label = "Search broad job market"
         spinner_label = "Searching Jooble for target roles..."
+    elif source == "Reed search":
+        st.success(
+            f"Reed search is enabled. {PRODUCT_NAME} searches Reed.co.uk for "
+            "your target roles, then applies the same title, experience, "
+            "sponsorship and preference filters used for every source."
+        )
+        provider = ReedJobProvider(reed_api_key)
+        discover_label = "Search Reed"
+        spinner_label = "Searching Reed for target roles..."
     elif source == "Google Jobs search":
         if serpapi_is_configured():
             st.success(
@@ -2809,6 +2824,8 @@ def render_job_discovery_content():
                     country=jooble_country,
                 )
             )
+        if reed_configured:
+            live_providers.append(ReedJobProvider(reed_api_key))
         if google_jobs_configured:
             if serpapi_is_configured():
                 live_providers.append(SerpApiGoogleJobsProvider(serpapi_api_key))
@@ -2847,6 +2864,10 @@ def render_job_discovery_content():
         st.caption(
             "Additional broad-market listings are provided by "
             "[Jooble](https://jooble.org/)."
+        )
+    if source in {"Reed search", "All live sources"} and reed_configured:
+        st.caption(
+            "UK listings are provided by [Reed](https://www.reed.co.uk/)."
         )
     if (
         source in {"Early-career web sources", "All live sources"}

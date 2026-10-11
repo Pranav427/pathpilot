@@ -218,6 +218,9 @@ def clear_discovery_provider_caches() -> None:
     _ARBEITNOW_CACHE.clear()
     _REMOTEOK_CACHE.clear()
     _SERPAPI_CACHE.clear()
+    from reed_provider import clear_reed_cache
+
+    clear_reed_cache()
     _SEARCHAPI_CACHE.clear()
 
 
@@ -2669,7 +2672,7 @@ def is_direct_company_source(source: str) -> bool:
 def is_broad_market_source(source: str) -> bool:
     """Returns true for broad-market aggregators that need extra verification."""
     return str(source or "").lower().startswith(
-        ("adzuna", "jooble", "remotive", "arbeitnow", "remoteok", "google jobs")
+        ("adzuna", "jooble", "reed", "remotive", "arbeitnow", "remoteok", "google jobs")
     )
 
 
