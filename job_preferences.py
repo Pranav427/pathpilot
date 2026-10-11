@@ -1,5 +1,6 @@
 """Structured job-discovery preferences shared by UI and search services."""
 
+from market import get_market
 from dataclasses import asdict, dataclass, field
 import re
 
@@ -13,7 +14,7 @@ EXPERIENCE_LEVELS = (
 ENTRY_LEVEL_REVIEW_MAX_YEARS = 2
 WORK_MODES = ("Onsite", "Hybrid", "Remote")
 JOB_TYPES = ("Full-time", "Internship", "Contract")
-DEFAULT_LOCATIONS_WHEN_UNSPECIFIED = ("India", "Remote")
+DEFAULT_LOCATIONS_WHEN_UNSPECIFIED = get_market().default_locations  # import-time snapshot; code uses the live market
 
 ROLE_EVIDENCE = (
     (
@@ -88,6 +89,7 @@ class JobPreferences:
     preferred_skills: list[str] = field(default_factory=list)
     excluded_keywords: list[str] = field(default_factory=list)
     maximum_job_age_days: int = 14
+    needs_sponsorship: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -136,8 +138,7 @@ def suggest_job_preferences(profile: dict) -> dict:
     locations = (
         [profile_location]
         if profile_location
-        and profile_location.lower()
-        not in {"india", "your city, state, country"}
+        and profile_location.lower() not in get_market().placeholder_locations
         else []
     )
 
@@ -171,11 +172,12 @@ def build_job_preferences(
     preferred_skills: str = "",
     excluded_keywords: str = "",
     maximum_job_age_days: int = 14,
+    needs_sponsorship: bool = False,
 ) -> JobPreferences:
     """Builds and validates preferences submitted by a user."""
     parsed_locations = split_preference_items(locations)
     if not parsed_locations:
-        parsed_locations = list(DEFAULT_LOCATIONS_WHEN_UNSPECIFIED)
+        parsed_locations = list(get_market().default_locations)
     preferences = JobPreferences(
         target_roles=split_preference_items(target_roles),
         locations=parsed_locations,
@@ -185,6 +187,7 @@ def build_job_preferences(
         preferred_skills=split_preference_items(preferred_skills),
         excluded_keywords=split_preference_items(excluded_keywords),
         maximum_job_age_days=int(maximum_job_age_days),
+        needs_sponsorship=bool(needs_sponsorship),
     )
     validate_job_preferences(preferences)
     return preferences

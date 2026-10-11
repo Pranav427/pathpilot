@@ -15,6 +15,9 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from market import get_market
+from sponsorship import classify_sponsorship, sponsorship_label
+
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:
@@ -150,7 +153,8 @@ def ensure_job_preferences(prefs) -> JobPreferences:
         valid_keys = {
             "target_roles", "locations", "experience_levels",
             "work_modes", "job_types", "preferred_skills",
-            "excluded_keywords", "maximum_job_age_days"
+            "excluded_keywords", "maximum_job_age_days",
+            "needs_sponsorship"
         }
         filtered = {k: v for k, v in prefs.items() if k in valid_keys}
         if not filtered:
@@ -884,7 +888,8 @@ def init_state():
             valid_keys = {
                 "target_roles", "locations", "experience_levels",
                 "work_modes", "job_types", "preferred_skills",
-                "excluded_keywords", "maximum_job_age_days"
+                "excluded_keywords", "maximum_job_age_days",
+            "needs_sponsorship"
             }
             filtered = {k: v for k, v in pref_dict.items() if k in valid_keys}
             job_preferences = JobPreferences(**filtered)
@@ -1228,13 +1233,13 @@ def load_shortlisted_job(app):
 
 
 def format_history_time(value: str) -> str:
-    """Converts stored UTC timestamps into a readable India-local time."""
+    """Converts stored UTC timestamps into a readable local time for the active market."""
     try:
         parsed = datetime.fromisoformat(str(value))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
-        local = parsed.astimezone(ZoneInfo("Asia/Kolkata"))
-        return local.strftime("%d %b %Y, %I:%M %p IST")
+        local = parsed.astimezone(ZoneInfo(get_market().timezone))
+        return local.strftime("%d %b %Y, %I:%M %p %Z")
     except (TypeError, ValueError):
         return str(value).replace("T", " ")
 
@@ -2484,7 +2489,7 @@ def render_job_discovery_content():
                 "Locations *",
                 value=", ".join(current.get("locations", [])),
                 height=100,
-                placeholder="Bengaluru, Hyderabad, Remote, India",
+                placeholder=get_market().location_example,
             )
 
         level_col, mode_col, type_col = st.columns(3)
@@ -2534,6 +2539,14 @@ def render_job_discovery_content():
             value=current.get("maximum_job_age_days", 14),
             format="%d days",
         )
+        needs_sponsorship = st.checkbox(
+            "I will need visa sponsorship from an employer",
+            value=bool(current.get("needs_sponsorship", False)),
+            help=(
+                "Hides jobs whose advert clearly says no sponsorship. Jobs that "
+                "do not mention it are still shown, so check each advert."
+            ),
+        )
         save_preferences = st.form_submit_button(
             "Save job preferences",
             type="primary",
@@ -2551,6 +2564,7 @@ def render_job_discovery_content():
                 preferred_skills=preferred_skills,
                 excluded_keywords=excluded_keywords,
                 maximum_job_age_days=maximum_job_age_days,
+                needs_sponsorship=needs_sponsorship,
             )
             if updated_preferences != st.session_state.job_preferences:
                 clear_discovery_results()
@@ -2614,10 +2628,10 @@ def render_job_discovery_content():
         ashby_configuration_error = str(exc)
     adzuna_app_id = os.getenv("ADZUNA_APP_ID", "").strip()
     adzuna_app_key = os.getenv("ADZUNA_APP_KEY", "").strip()
-    adzuna_country = os.getenv("ADZUNA_COUNTRY", "in").strip().lower()
+    adzuna_country = os.getenv("ADZUNA_COUNTRY", get_market().adzuna_country).strip().lower()
     adzuna_configured = bool(adzuna_app_id and adzuna_app_key)
     jooble_api_key = os.getenv("JOOBLE_API_KEY", "").strip()
-    jooble_country = os.getenv("JOOBLE_COUNTRY", "in").strip().lower()
+    jooble_country = os.getenv("JOOBLE_COUNTRY", get_market().jooble_country).strip().lower()
     jooble_configured = jooble_is_configured()
     serpapi_api_key = os.getenv("SERPAPI_API_KEY", "").strip()
     searchapi_api_key = os.getenv("SEARCHAPI_API_KEY", "").strip()
@@ -3133,7 +3147,7 @@ def render_job_discovery_content():
         )
         if expanded_count:
             st.caption(
-                f"{expanded_count} result(s) are India-market coverage "
+                f"{expanded_count} result(s) are broader-market coverage "
                 "expansions because exact-location matches were below the "
                 f"{TARGET_DISCOVERY_RESULTS}-job target."
             )
@@ -3234,6 +3248,7 @@ def render_job_discovery_content():
                 job.location,
                 job.job_type,
                 job.source,
+                sponsorship_label(classify_sponsorship(f"{job.job_title} {job.job_description}")),
             ]
             st.caption(
                 " · ".join(item for item in metadata if str(item).strip())
