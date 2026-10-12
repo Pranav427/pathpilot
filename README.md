@@ -87,6 +87,9 @@ When multiple providers are configured, **All live sources** combines and dedupl
 ### Job Market
 PathPilot targets the UK by default. Set `PATHPILOT_COUNTRY=GB` (UK) or `IN` (India) to change the default locations, Adzuna/Jooble country, Google Jobs region and time zone.
 
+### Private Beta Controls
+Set `BETA_INVITE_CODE` to require an invite code at registration, and `MAX_AI_ACTIONS_PER_DAY` (default 40, `0` = unlimited) to cap each user's daily AI requests. Pair this with the Streamlit Cloud *Sharing* setting to limit who can open the app.
+
 ### Broad Market Aggregators
 
 For broader market coverage, register an Adzuna API application and configure:

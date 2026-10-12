@@ -264,6 +264,16 @@ def require_keys(data: dict, keys: Iterable[str], source: str) -> dict:
     return data
 
 
+def _enforce_usage_limit() -> None:
+    """Count this AI request against the signed-in user's daily allowance."""
+    import beta_access
+
+    try:
+        beta_access.check_and_record_ai_action()
+    except beta_access.AIUsageLimitError as exc:
+        raise LLMServiceError("daily_limit", str(exc)) from exc
+
+
 def create_message_with_retry(
     client,
     *,
@@ -274,6 +284,7 @@ def create_message_with_retry(
 ):
     """Calls the selected LLM with retries for transient failures."""
     validate_llm_configuration(client)
+    _enforce_usage_limit()
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
@@ -322,6 +333,7 @@ def create_json_with_retry(
 ) -> dict:
     """Calls the selected LLM and retries invalid structured responses."""
     validate_llm_configuration(client)
+    _enforce_usage_limit()
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
