@@ -4,7 +4,7 @@ import json
 import os
 import re
 import time
-from market import get_market
+from market import get_market, remote_location_is_compatible
 from early_career import (
     GRADUATE_SCHEME,
     PLACEMENT_YEAR,
@@ -248,6 +248,12 @@ def html_to_text(value: str) -> str:
     return parser.text()
 
 
+def _market_curated(boards: dict) -> dict:
+    """Curated defaults without boards the active market excludes (e.g. India-only)."""
+    excluded = get_market().excluded_curated_boards
+    return {key: value for key, value in boards.items() if key.lower() not in excluded}
+
+
 def parse_greenhouse_boards(value: str | None = None) -> dict[str, str]:
     """
     Parses `board_token|Company Name` pairs from configuration.
@@ -257,7 +263,7 @@ def parse_greenhouse_boards(value: str | None = None) -> dict[str, str]:
     if value is None:
         raw_value = os.getenv(GREENHOUSE_BOARDS_ENV, "")
         if not raw_value.strip() and use_curated_live_sources():
-            return dict(CURATED_GREENHOUSE_BOARDS)
+            return _market_curated(CURATED_GREENHOUSE_BOARDS)
     else:
         raw_value = value
     boards = {}
@@ -293,7 +299,7 @@ def parse_lever_sites(
     if value is None:
         raw_value = os.getenv(LEVER_SITES_ENV, "")
         if not raw_value.strip() and use_curated_live_sources():
-            return dict(CURATED_LEVER_SITES)
+            return _market_curated(CURATED_LEVER_SITES)
     else:
         raw_value = value
     sites = {}
@@ -324,7 +330,7 @@ def parse_ashby_boards(value: str | None = None) -> dict[str, str]:
     if value is None:
         raw_value = os.getenv(ASHBY_BOARDS_ENV, "")
         if not raw_value.strip() and use_curated_live_sources():
-            return dict(CURATED_ASHBY_BOARDS)
+            return _market_curated(CURATED_ASHBY_BOARDS)
     else:
         raw_value = value
     boards = {}
@@ -2579,7 +2585,7 @@ def job_matches_preferences(
         for location in requested_locations
         if location != "remote"
     )
-    if job.work_mode == "Remote":
+    if job.work_mode == "Remote" and remote_location_is_compatible(job.location):
         unrestricted_remote = any(
             marker in job_location
             for marker in ("worldwide", "anywhere", "global", *get_market().location_terms)
