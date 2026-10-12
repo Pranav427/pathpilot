@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+import beta_access
 from market import get_market
 from salary import below_sponsorship_threshold, format_salary, parse_salary
 from reed_provider import ReedJobProvider, reed_is_configured
@@ -209,6 +210,7 @@ def user_facing_error(exc: Exception, action: str) -> str:
             "timeout": (
                 f"{action} timed out. Check the connection and try again."
             ),
+            "daily_limit": str(exc),
         }
         return messages.get(
             exc.code,
@@ -4673,6 +4675,11 @@ def render_auth():
                     email = st.text_input("Email address", placeholder="e.g. name@domain.com")
                     password = st.text_input("Password", type="password")
                     confirm = st.text_input("Confirm Password", type="password")
+                    invite_code = (
+                        st.text_input("Invite code", type="password")
+                        if beta_access.invite_code_required()
+                        else ""
+                    )
                     
                     st.markdown(
                         """
@@ -4688,7 +4695,9 @@ def render_auth():
                     submit = st.form_submit_button("Register", type="primary", use_container_width=True)
                     if submit:
                         has_digit = any(char.isdigit() for char in password)
-                        if not email or not password:
+                        if not beta_access.invite_code_valid(invite_code):
+                            st.error("That invite code is not valid. Ask the PathPilot team for one.")
+                        elif not email or not password:
                             st.error("Please fill in all fields.")
                         elif password != confirm:
                             st.error("Passwords do not match.")
@@ -4724,6 +4733,7 @@ def render_auth():
 def main():
     apply_styles()
     init_state()
+    beta_access.set_current_user(st.session_state.get("current_user_id"))
     apply_pending_discovered_job()
 
     if st.session_state.current_user_id is None:
@@ -4737,6 +4747,13 @@ def main():
             f'<div class="status-pill positive" style="text-align: center; margin-bottom: 1rem;">👤 {st.session_state.current_user_email}</div>',
             unsafe_allow_html=True,
         )
+        daily_limit = beta_access.ai_actions_per_day()
+        if daily_limit and st.session_state.current_user_id and not is_demo_mode():
+            try:
+                used_today = beta_access.ai_actions_used_today(st.session_state.current_user_id)
+                st.caption(f"AI actions today: {used_today}/{daily_limit}")
+            except Exception:
+                pass
         import sys
         is_test = "pytest" in sys.modules or os.getenv("TEST_MODE") == "1"
         page = st.radio(

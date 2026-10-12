@@ -180,6 +180,17 @@ def init_db_schema(db_path: str = None):
                     )
                 """)
                 
+                # 1b. Daily AI usage (private-beta cap)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ai_usage (
+                        id                  SERIAL PRIMARY KEY,
+                        user_id             INTEGER NOT NULL,
+                        day                 VARCHAR(10) NOT NULL,
+                        count               INTEGER NOT NULL DEFAULT 0,
+                        UNIQUE(user_id, day)
+                    )
+                """)
+
                 # 2. User Profiles table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS user_profiles (
@@ -302,6 +313,17 @@ def init_db_schema(db_path: str = None):
                 )
             """)
             
+            # Daily AI usage (private-beta cap)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ai_usage (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id             INTEGER NOT NULL,
+                    day                 TEXT NOT NULL,
+                    count               INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(user_id, day)
+                )
+            """)
+
             # User Profiles
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_profiles (
